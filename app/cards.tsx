@@ -511,6 +511,11 @@ export function VisualCard({ kind, lang }: { kind: CardKind; lang: Lang }) {
       <div className="card tone-ocean">
         <p className="card-k">{T.prices.k[lang]}</p>
         <p className="card-t">{T.prices.t[lang]}</p>
+        <figure className="photo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/bay-bench.webp" alt="The Bay Bench" width={390} height={293} loading="lazy" />
+          <figcaption>The Bay Bench · Plastic Fisherman</figcaption>
+        </figure>
         <table className="prices">
           <thead>
             <tr>
