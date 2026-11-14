@@ -38,9 +38,13 @@ const PROSODY: Record<VoiceMood, { rate: number; pitch: number }> = {
   calm: { rate: 0.95, pitch: 0.98 },
 };
 
+// Las voces en inglés suenan más rápidas a la misma velocidad: se frenan un poco.
+const LANG_RATE: Record<Lang, number> = { es: 1, en: 0.9 };
+
 /** Ritmo y tono de una frase: las exclamaciones suben, las preguntas se abren. */
-export function prosody(mood: VoiceMood, sentence: string) {
+export function prosody(mood: VoiceMood, sentence: string, lang: Lang = "es") {
   let { rate, pitch } = PROSODY[mood];
+  rate *= LANG_RATE[lang];
   const end = sentence.trim().slice(-1);
   if (end === "!") {
     pitch += 0.05;

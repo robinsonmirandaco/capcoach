@@ -638,7 +638,7 @@ export default function Page() {
         const u = new SpeechSynthesisUtterance(part);
         u.lang = voice?.lang || (l === "en" ? "en-US" : "es-US");
         if (voice) u.voice = voice;
-        const p = prosody(vmood, part);
+        const p = prosody(vmood, part, l);
         u.rate = p.rate;
         u.pitch = p.pitch;
         u.onerror = finish;
