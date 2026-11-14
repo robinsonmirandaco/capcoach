@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cap Coach
 
-## Getting Started
+Chatbot de texto y voz de la campaña Save Your Cap a Seat / Guárdale un puesto a tu tapa (A Cleaner Planet + Plastic Fisherman).
 
-First, run the development server:
+- `app/page.tsx`: la interfaz (chat, botones rápidos, micrófono, botón Escuchar, contador).
+- `app/api/chat/route.ts`: llama a la API de Anthropic (`claude-haiku-5-5`, 300 tokens) y devuelve la respuesta en streaming.
+- `config/cap-coach-system-prompt.txt`: las instrucciones de Cap Coach. Para cambiar lo que sabe o cómo responde, edita este archivo y vuelve a desplegar.
+- `next.config.ts`: encabezado `Content-Security-Policy: frame-ancestors` (qué sitios pueden insertarlo en un iframe).
+
+## Probar en local
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # y pega tu ANTHROPIC_API_KEY
+npm install
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Variables de entorno
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Obligatoria | Para qué |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Sí | Llave de la API. Solo vive en el servidor. |
+| `FRAME_ANCESTORS` | No | Sitios que pueden insertar el iframe, separados por espacios. Por defecto: plasticfisherman.com y acleanerplanet.org (con y sin `www`). Se lee al compilar: después de cambiarla hay que volver a desplegar. |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Insertar en otro sitio
 
-## Learn More
+```html
+<iframe src="https://TU-PROYECTO.vercel.app" allow="microphone; autoplay" width="100%" height="640" style="border:0"></iframe>
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Límites
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 20 mensajes del usuario por sesión (cliente y servidor) y 300 caracteres por mensaje (el servidor recorta).
+- El límite por sesión se basa en el historial que envía el navegador: recargar la página empieza una sesión nueva. Para un tope de gasto firme, pon un límite de gasto mensual en la consola de Anthropic.

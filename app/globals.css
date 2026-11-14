@@ -1,49 +1,78 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+:root{
+  --sky:#e8f5fb; --sky-2:#cbe8f4; --blue:#149ac9; --blue-d:#0d7aa3; --navy:#0b2a3c; --pink:#e0457b; --pink-d:#b8325f; --sun:#f2c230;
+  --white:#ffffff; --sand:#fff6e3; --coral:#ff8a65; --mint:#5cc8a8; --ink:#16324a; --muted:#5b7487;
+  --r:22px;
 }
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  font-family:"Nunito",system-ui,sans-serif;color:var(--ink);
+  background:linear-gradient(180deg,var(--sky) 0%,#f4fbfe 60%,var(--white) 100%);
+  display:flex;justify-content:center;align-items:stretch;
+}
+.app{
+  width:100%;max-width:760px;height:100vh;height:100dvh;display:flex;flex-direction:column;
+  background:var(--white);position:relative;overflow:hidden;
+  box-shadow:0 10px 40px rgba(15,59,87,.12);
+}
+@media(min-width:800px){.app{margin:20px 0;height:calc(100dvh - 40px);border-radius:28px}}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* HEADER */
+header{position:relative;background:var(--blue);color:#fff;padding:14px 18px 34px}
+.logos{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.logo{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.16);border:1.5px dashed rgba(255,255,255,.7);border-radius:14px;padding:6px 10px;font-size:12px;font-weight:700;line-height:1.1}
+.logo svg{flex:none}
+.logo small{display:block;font-weight:600;opacity:.8;font-size:10px}
+.plus{font-family:"Outfit","Nunito",system-ui,sans-serif;font-size:20px;opacity:.8}
+.hero{display:flex;align-items:center;gap:14px;margin-top:14px}
+.avatar{width:58px;height:58px;flex:none;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 4px 0 rgba(0,0,0,.12)}
+h1{font-family:"Outfit","Nunito",system-ui,sans-serif;font-weight:800;font-size:28px;margin:0;line-height:1;letter-spacing:-.5px}
+.kicker{font:800 10.5px "Outfit",system-ui,sans-serif;letter-spacing:1.4px;text-transform:uppercase;opacity:.9;margin:0 0 4px}
+.tag{margin:4px 0 0;font-size:14px;opacity:.95}
+.tag b{font-weight:700}
+.waves{position:absolute;left:0;right:0;bottom:-1px;height:30px;display:block;width:100%}
 
-html {
-  height: 100%;
-}
+/* GOAL STRIP */
+.strip{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--sky);border-bottom:1px solid var(--sky-2);overflow-x:auto;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.step{display:flex;align-items:center;gap:6px;background:#fff;border-left:3px solid var(--sun);border-radius:4px 999px 999px 4px;padding:5px 11px 5px 6px;font-size:12px;font-weight:700;color:var(--navy);white-space:nowrap;box-shadow:0 2px 0 var(--sky-2)}
+.step i{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-style:normal}
+.arrow{color:var(--blue);font-weight:800;flex:none}
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
+/* CHAT */
+.chat{flex:1;overflow-y:auto;padding:18px 14px 8px;display:flex;flex-direction:column;gap:12px;
+  background-image:radial-gradient(circle at 20px 20px,rgba(63,169,220,.07) 3px,transparent 4px);background-size:44px 44px}
+.row{display:flex;gap:8px;align-items:flex-end;max-width:92%}
+.row.user{align-self:flex-end;flex-direction:row-reverse}
+.mini{width:30px;height:30px;flex:none;border-radius:50%;background:var(--sky);display:grid;place-items:center}
+.bubble{padding:11px 14px;border-radius:var(--r);font-size:15px;line-height:1.45;position:relative;white-space:pre-line;overflow-wrap:anywhere}
+.bot .bubble{background:#fff;border:2px solid var(--sky-2);border-bottom-left-radius:6px}
+.user .bubble{background:var(--blue);color:#fff;border-bottom-right-radius:6px}
+.meta{display:flex;gap:6px;margin-top:6px}
+.speak{border:0;background:var(--sky);color:var(--blue-d);font:700 12px "Nunito",system-ui,sans-serif;border-radius:999px;padding:4px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.speak:hover{background:var(--sky-2)}
+.speak.on{background:var(--blue);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:8px;padding-left:38px}
+.chip{border:2px solid var(--blue);background:#fff;color:var(--blue-d);font:700 13px "Outfit","Nunito",system-ui,sans-serif;border-radius:999px;padding:7px 13px;cursor:pointer;transition:.15s}
+.chip:hover{background:var(--pink);border-color:var(--pink);color:#fff;transform:translateY(-1px)}
+.typing span{display:inline-block;width:7px;height:7px;margin:0 2px;border-radius:50%;background:var(--blue);animation:b 1s infinite}
+.typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-5px);opacity:1}}
 
-body {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-}
+/* INPUT */
+.composer{padding:10px 12px 8px;border-top:1px solid var(--sky-2);background:#fff}
+form{display:flex;gap:8px;align-items:center}
+.field{flex:1;display:flex;align-items:center;background:var(--sky);border-radius:999px;padding:4px 6px 4px 16px;border:2px solid transparent}
+.field:focus-within{border-color:var(--blue)}
+input{flex:1;border:0;background:transparent;font:600 15px "Nunito",system-ui,sans-serif;color:var(--ink);padding:9px 0;outline:none;min-width:0}
+.round{width:44px;height:44px;flex:none;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer}
+.mic{background:#fff;color:var(--blue-d);width:38px;height:38px}
+.mic.rec{background:var(--pink);color:#fff;animation:p 1.2s infinite}
+@keyframes p{0%{box-shadow:0 0 0 0 rgba(224,69,123,.6)}100%{box-shadow:0 0 0 12px rgba(224,69,123,0)}}
+.send{background:var(--pink);color:#fff;box-shadow:0 3px 0 var(--pink-d)}
+.send:disabled{opacity:.45;cursor:not-allowed}
+.sub{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--muted);margin-top:7px;padding:0 6px}
+.sub a{color:var(--blue-d);font-weight:700;text-decoration:none}
+.count b{color:var(--navy)}
+@media(max-width:480px){.tagx{display:none}}
+@media(prefers-reduced-motion:reduce){.typing span,.mic.rec{animation:none}.chip{transition:none}}
