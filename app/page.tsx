@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { VisualCard, detectTopic, type CardKind, type Lang, type Topic } from "./cards";
+import { VisualCard, detectFromAnswer, detectTopic, type CardKind, type Lang, type Topic } from "./cards";
 import { World, type Mood } from "./avatar";
 import { SAMPLE, forSpeech, prosody, rankVoices, regionLabel, splitSentences, toneToMood, voiceLabel, type VoiceMood } from "./voice";
 
@@ -20,6 +20,7 @@ type Item = {
   spoken?: boolean;
   card?: CardKind | null;
   topic?: Topic | null;
+  mission?: MissionId; // celebración de una misión lograda
 };
 type ApiMessage = { role: "user" | "assistant"; content: string };
 
@@ -74,6 +75,15 @@ const TEXT = {
   benchFull: { es: "¡Banca completa! Ya eres parte del cambio.", en: "Bench complete! You are part of the change." },
   close: { es: "Cerrar", en: "Close" },
   tapMe: { es: "Tócame", en: "Tap me" },
+  missionDone: { es: "¡Misión lograda!", en: "Mission complete!" },
+  nextMission: { es: "Siguiente misión", en: "Next mission" },
+  missionChip: { es: "Misión", en: "Mission" },
+  reset: { es: "Reiniciar misiones", en: "Restart missions" },
+  resetSure: { es: "¿Seguro? Toca otra vez para reiniciar", en: "Sure? Tap again to restart" },
+  savedHere: {
+    es: "Tu avance se guarda en este navegador. \"Nuevo chat\" no lo borra.",
+    en: "Your progress is saved in this browser. \"New chat\" keeps it.",
+  },
   voiceTitle: { es: "Voz del coach", en: "Coach voice" },
   readAloud: { es: "Leer las respuestas en voz alta", en: "Read answers aloud" },
   tryVoice: { es: "Probar voz", en: "Try voice" },
@@ -132,7 +142,9 @@ const MISSIONS: { id: MissionId; color: string; title: Record<Lang, string>; why
     ask: { es: "Comparte la campaña", en: "Share the campaign" },
   },
 ];
-const CARD_MISSION: Partial<Record<CardKind, MissionId>> = { caps: "caps", process: "journey", calc: "math", share: "share" };
+// Misiones que se logran al ver la tarjeta. El juego, la cuenta y compartir
+// se logran al usar la tarjeta (ver app/cards.tsx).
+const CARD_MISSION: Partial<Record<CardKind, MissionId>> = { caps: "caps", process: "journey" };
 
 // Lo que dice el avatar cuando lo tocan. Solo datos de la campaña.
 const TIPS: Record<Lang, string[]> = {
@@ -291,15 +303,55 @@ export default function Page() {
   const tipN = useRef(0);
   const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [flash, setFlash] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const saveMissions = (list: MissionId[]) => {
+    doneRef.current = list;
+    setDone(list);
+    try {
+      localStorage.setItem("capcoach-missions", JSON.stringify(list));
+    } catch {}
+  };
+
   const complete = useCallback((id: MissionId) => {
     if (doneRef.current.includes(id)) return;
-    doneRef.current = [...doneRef.current, id];
-    setDone(doneRef.current);
-    try {
-      localStorage.setItem("capcoach-missions", JSON.stringify(doneRef.current));
-    } catch {}
+    saveMissions(MISSIONS.map((m) => m.id).filter((x) => x === id || doneRef.current.includes(x)));
+    // La celebración aparece en el chat, justo después de lo que la logró.
+    setItems((prev) => [...prev, { id: nextId.current++, from: "bot", text: "", lang: langRef.current, mission: id }]);
+    // La tira de arriba siempre está a la vista: ahí se anuncia al instante.
+    setFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(false), 2800);
     setCheer(true);
     setTimeout(() => setCheer(false), 1800);
+  }, []);
+
+  const resetMissions = () => {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      setTimeout(() => setConfirmReset(false), 4000);
+      return;
+    }
+    setConfirmReset(false);
+    saveMissions([]);
+  };
+
+  // Si la persona tiene el chat abierto en otra pestaña, el avance se sincroniza.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== "capcoach-missions") return;
+      try {
+        const saved = JSON.parse(e.newValue || "[]");
+        if (Array.isArray(saved)) {
+          doneRef.current = MISSIONS.map((m) => m.id).filter((id) => saved.includes(id));
+          setDone(doneRef.current);
+        }
+      } catch {}
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const atLimit = sent >= LIMIT;
@@ -398,9 +450,19 @@ export default function Page() {
         const answerLang = detectLang(full, userLang);
         setLang(answerLang);
         history.current = [...messages, { role: "assistant", content: full }];
-        setBot({ text: full, lang: answerLang, pending: false, card });
-        if (voiceOutRef.current) speakRef.current(botId, full, answerLang, true, toneToMood(topic?.tone));
-        const mission = card ? CARD_MISSION[card] : undefined;
+        // Si la pregunta no trajo tarjeta, se mira la respuesta: así cuenta aunque pregunten con sus palabras.
+        let finalCard = card;
+        let finalTopic = topic;
+        if (!finalCard && topic?.tone !== "coral") {
+          const fromAnswer = detectFromAnswer(full);
+          if (fromAnswer) {
+            finalCard = fromAnswer.card;
+            finalTopic = topic ?? fromAnswer;
+          }
+        }
+        setBot({ text: full, lang: answerLang, pending: false, card: finalCard, topic: finalTopic });
+        if (voiceOutRef.current) speakRef.current(botId, full, answerLang, true, toneToMood(finalTopic?.tone));
+        const mission = finalCard ? CARD_MISSION[finalCard] : undefined;
         if (mission) complete(mission);
         if (sentRef.current >= LIMIT) {
           setItems((prev) => [...prev, { id: nextId.current++, from: "bot", text: TEXT.limit[answerLang], lang: answerLang }]);
@@ -674,6 +736,8 @@ export default function Page() {
   const mood: Mood = listening ? "listening" : busy ? "thinking" : speakingId !== null ? "speaking" : cheer ? "happy" : "idle";
   const fresh = items.length === 1; // todavía no empieza la conversación
   const allDone = done.length === MISSIONS.length;
+  const nextMission = MISSIONS.find((m) => !done.includes(m.id));
+  const lastMissionItem = [...items].reverse().find((it) => it.mission)?.id;
 
   return (
     <div className="app" lang={lang}>
@@ -781,14 +845,22 @@ export default function Page() {
         </div>
       </header>
 
-      <button type="button" className={"quest" + (allDone ? " full" : "")} onClick={() => setPanel(true)} aria-haspopup="dialog">
+      <button type="button" className={"quest" + (allDone ? " full" : "") + (flash ? " flash" : "")} onClick={() => setPanel(true)} aria-haspopup="dialog">
         <span className="slats" aria-hidden="true">
           {MISSIONS.map((m) => (
             <i key={m.id} style={done.includes(m.id) ? { background: m.color } : undefined} className={done.includes(m.id) ? "on" : ""} />
           ))}
         </span>
-        <span className="quest-t">
-          <b>{TEXT.yourBench[lang]}:</b> {done.length} / {MISSIONS.length} {TEXT.missions[lang]}
+        <span className="quest-t" aria-live="polite">
+          {flash ? (
+            <>
+              <b>★ {TEXT.missionDone[lang]}</b> {done.length} / {MISSIONS.length}
+            </>
+          ) : (
+            <>
+              <b>{TEXT.yourBench[lang]}:</b> {done.length} / {MISSIONS.length} {TEXT.missions[lang]}
+            </>
+          )}
         </span>
         <span className="quest-go">{TEXT.seeMissions[lang]} ›</span>
       </button>
@@ -839,6 +911,12 @@ export default function Page() {
             <button type="button" className="btn coach" disabled={busy || atLimit} onClick={() => startMission(TEXT.coachAsk[lang])}>
               <World size={26} /> {TEXT.coachMe[lang]}
             </button>
+            {done.length > 0 && (
+              <button type="button" className={"reset" + (confirmReset ? " sure" : "")} onClick={resetMissions}>
+                {confirmReset ? TEXT.resetSure[lang] : TEXT.reset[lang]}
+              </button>
+            )}
+            <p className="sheet-note">{TEXT.savedHere[lang]}</p>
           </div>
         </div>
       )}
@@ -851,6 +929,42 @@ export default function Page() {
                 <div className="bubble">
                   {it.spoken && <span className="via">{TEXT.spoken[lang]}</span>}
                   {it.text}
+                </div>
+              </div>
+            );
+          }
+          if (it.mission) {
+            // Celebración de una misión lograda, dentro del chat.
+            const m = MISSIONS.find((x) => x.id === it.mission)!;
+            const latest = it.id === lastMissionItem;
+            return (
+              <div className="row bot" key={it.id}>
+                <div className="mdone" role="status" style={{ "--c": m.color } as React.CSSProperties}>
+                  <span className="mdone-star" aria-hidden="true">
+                    ★
+                  </span>
+                  <div className="mdone-body">
+                    <p className="mdone-k">{TEXT.missionDone[lang]}</p>
+                    <p className="mdone-t">{m.title[lang]}</p>
+                    <div className="mdone-bar">
+                      <span className="slats" aria-hidden="true">
+                        {MISSIONS.map((x) => (
+                          <i key={x.id} style={done.includes(x.id) ? { background: x.color } : undefined} className={done.includes(x.id) ? "on" : ""} />
+                        ))}
+                      </span>
+                      <span>
+                        {TEXT.yourBench[lang]}: {done.length} / {MISSIONS.length}
+                      </span>
+                    </div>
+                    {latest &&
+                      (nextMission ? (
+                        <button type="button" className="btn primary" disabled={busy || atLimit} onClick={() => submit(nextMission.ask[lang])}>
+                          {TEXT.nextMission[lang]}: {nextMission.title[lang]} ›
+                        </button>
+                      ) : (
+                        <p className="mdone-full">{TEXT.benchFull[lang]}</p>
+                      ))}
+                  </div>
                 </div>
               </div>
             );
@@ -876,7 +990,7 @@ export default function Page() {
                     </span>
                   )}
                   <div className={"bubble" + (it.topic ? " toned tone-" + it.topic.tone : "")}>{text}</div>
-                  {it.card && <VisualCard kind={it.card} lang={itemLang} onQuizDone={() => complete("quiz")} />}
+                  {it.card && <VisualCard kind={it.card} lang={itemLang} onMission={complete} done={done} />}
                   {canSpeak && (
                     <button
                       type="button"
@@ -929,10 +1043,15 @@ export default function Page() {
         )}
         {showQuick && role && (
           <div className="chips">
+            {nextMission && (
+              <button type="button" className="chip mission" style={{ "--c": nextMission.color } as React.CSSProperties} onClick={() => submit(nextMission.ask[lang])}>
+                <span aria-hidden="true">★</span> {TEXT.missionChip[lang]}: {nextMission.title[lang]}
+              </button>
+            )}
             {NEXT_CHIPS[lang][role]
               .map((label, n) => ({ label, n }))
-              .filter((c) => !used.includes(c.n))
-              .slice(0, CHIPS_SHOWN)
+              .filter((c) => !used.includes(c.n) && c.label !== nextMission?.ask[lang])
+              .slice(0, nextMission ? CHIPS_SHOWN - 1 : CHIPS_SHOWN)
               .map(({ label, n }) => (
                 <button
                   type="button"

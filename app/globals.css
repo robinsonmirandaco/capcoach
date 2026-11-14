@@ -350,3 +350,27 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--sun);outline-offset
 .vname small{display:block;font-size:11px;color:var(--muted);font-weight:600}
 .vopt em{flex:none;font:800 9.5px var(--display);letter-spacing:.06em;text-transform:uppercase;font-style:normal;color:var(--grass-ink);background:var(--grass-tint);border-radius:999px;padding:3px 7px}
 .icon.on{background:var(--sand);border-color:var(--bay)}
+
+/* ---------- misiones dentro del chat ---------- */
+.mdone{display:flex;gap:10px;align-items:flex-start;width:min(100%,420px);background:var(--sun-tint);border:2px solid var(--c);border-radius:16px;padding:10px 12px;animation:mpop .45s cubic-bezier(.2,1.4,.4,1) both}
+@keyframes mpop{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+.mdone-star{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--c);color:#fff;font-size:18px;animation:spin 1s ease-out both}
+@keyframes spin{from{transform:rotate(-180deg) scale(.4)}to{transform:none}}
+.mdone-body{flex:1;min-width:0}
+.mdone-k{margin:0;font:800 10px var(--display);font-stretch:125%;letter-spacing:1.3px;text-transform:uppercase;color:var(--sun-ink)}
+.mdone-t{margin:2px 0 6px;font:800 15px/1.2 var(--display)}
+.mdone-bar{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)}
+.mdone .btn{margin-top:8px}
+.mdone-full{margin:8px 0 0;font-weight:800;color:var(--grass-ink);font-size:13.5px}
+.chip.mission{border-color:var(--c);background:var(--sun-tint);color:var(--ink);font-weight:800}
+.chip.mission span{color:var(--sun-d)}
+.chip.mission:hover{background:var(--sun)}
+.mission-hint{margin:10px 0 0;background:var(--sun-tint);border-radius:10px;padding:7px 10px;font-size:12.5px;font-weight:700;color:var(--sun-ink)}
+.mission-hint span{color:var(--sun-d)}
+.reset{display:block;margin:12px auto 0;border:0;background:transparent;color:var(--muted);font:700 12.5px var(--body);text-decoration:underline;text-underline-offset:3px;padding:4px 8px}
+.reset.sure{color:var(--coral-ink)}
+.sheet-note{margin:6px 0 0;text-align:center;font-size:11.5px;color:var(--muted)}
+.quest.flash{background:var(--sun);animation:qflash .6s ease-out 2}
+.quest.flash .quest-t,.quest.flash .quest-t b,.quest.flash .quest-go{color:var(--ink)}
+@keyframes qflash{0%{box-shadow:inset 0 0 0 0 rgba(255,255,255,.9)}100%{box-shadow:inset 0 0 0 24px rgba(255,255,255,0)}}
+.quest.flash .slats i.on{box-shadow:0 0 0 1.5px var(--ink)}

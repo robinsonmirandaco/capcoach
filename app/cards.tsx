@@ -67,6 +67,20 @@ export function detectTopic(text: string): Topic | null {
   return null;
 }
 
+/**
+ * Si la pregunta no trajo tarjeta, mira lo que Cap Coach respondió.
+ * Así cuenta la misión aunque la persona pregunte con sus propias palabras.
+ */
+export function detectFromAnswer(answer: string): Topic | null {
+  const s = answer.toLowerCase();
+  const numbers = /\b2\b[^.]*\b4\b[^.]*\b5\b[^.]*\b6\b/.test(s);
+  if (/tri[aá]ngulo|triangle/.test(s) || numbers)
+    return { tone: "grass", label: { es: "Lo que puedes hacer", en: "What you can do" }, card: "caps" };
+  if (/tritur|muel|hojuela|shred|flake|grind|ground into/.test(s) && /viga|beam|fund|melt|extru/.test(s))
+    return { tone: "ocean", label: { es: "Cómo funciona", en: "How it works" }, card: "process" };
+  return null;
+}
+
 const QUIZ: { q: Record<Lang, string>; ok: boolean; why: Record<Lang, string> }[] = [
   {
     q: { es: "Tapa de botella de agua con un 2 en el triángulo", en: "Water bottle cap with a 2 in the triangle" },
@@ -113,6 +127,7 @@ const T = {
       es: ["Buen comienzo. El número en la tapa es lo que decide.", "¡Casi! Ya sabes leer una tapa.", "¡Ojo de experto! Tus tapas ya pidieron puesto."],
       en: ["Good start. The number on the cap is what decides.", "So close! You can read a cap now.", "Expert eye! Your caps have their seat saved."],
     },
+    hint: { es: "Responde los seis casos para lograr la misión.", en: "Answer all six to complete the mission." },
   },
   calc: {
     k: { es: "La cuenta", en: "The math" },
@@ -125,6 +140,7 @@ const T = {
       es: "Es un estimado con tus propios números. Una Bay Bench lleva 19,000 tapas y piezas.",
       en: "This is an estimate from your own numbers. One Bay Bench takes 19,000 caps and pieces.",
     },
+    hint: { es: "Mueve las barras con los números de tu edificio para lograr la misión.", en: "Move the sliders to your building's numbers to complete the mission." },
   },
   share: {
     k: { es: "Pasa la voz", en: "Spread the word" },
@@ -137,6 +153,7 @@ const T = {
     copy: { es: "Copiar", en: "Copy" },
     copied: { es: "¡Copiado!", en: "Copied!" },
     manual: { es: "Mantén presionado el texto para copiarlo.", en: "Press and hold the text to copy it." },
+    hint: { es: "Comparte o copia el mensaje para lograr la misión.", en: "Share or copy the message to complete the mission." },
   },
   caps: {
     k: { es: "Qué tapas sirven", en: "Which caps work" },
@@ -277,7 +294,17 @@ function ProcessCard({ lang }: { lang: Lang }) {
   );
 }
 
-function QuizCard({ lang, onDone }: { lang: Lang; onDone?: () => void }) {
+type MissionProps = { lang: Lang; onDone?: () => void; pending?: boolean };
+
+function MissionHint({ text }: { text: string }) {
+  return (
+    <p className="mission-hint">
+      <span aria-hidden="true">★</span> {text}
+    </p>
+  );
+}
+
+function QuizCard({ lang, onDone, pending }: MissionProps) {
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState<boolean | null>(null);
   const [score, setScore] = useState(0);
@@ -309,6 +336,7 @@ function QuizCard({ lang, onDone }: { lang: Lang; onDone?: () => void }) {
         </div>
       ) : (
         <>
+          {pending && i === 0 && picked === null && <MissionHint text={T.quiz.hint[lang]} />}
           <p className="quiz-q">{item.q[lang]}</p>
           <div className="quiz-btns">
             <button type="button" className={"qb yes-b" + (picked === true ? " on" : "")} disabled={picked !== null} onClick={() => pick(true)}>
@@ -337,9 +365,14 @@ function QuizCard({ lang, onDone }: { lang: Lang; onDone?: () => void }) {
   );
 }
 
-function CalcCard({ lang }: { lang: Lang }) {
+function CalcCard({ lang, onDone, pending }: MissionProps) {
   const [apts, setApts] = useState(200);
   const [caps, setCaps] = useState(5);
+  // La misión se logra cuando la persona pone los números de su edificio.
+  const move = (set: (n: number) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    set(+e.target.value);
+    onDone?.();
+  };
   const perWeek = apts * caps;
   const weeks = Math.ceil(19000 / perWeek);
   const perYear = (52 * perWeek) / 19000;
@@ -351,13 +384,13 @@ function CalcCard({ lang }: { lang: Lang }) {
         <span>
           {T.calc.apts[lang]} <b>{apts}</b>
         </span>
-        <input type="range" min={10} max={600} step={10} value={apts} onChange={(e) => setApts(+e.target.value)} />
+        <input type="range" min={10} max={600} step={10} value={apts} onChange={move(setApts)} />
       </label>
       <label className="slider">
         <span>
           {T.calc.caps[lang]} <b>{caps}</b>
         </span>
-        <input type="range" min={1} max={30} step={1} value={caps} onChange={(e) => setCaps(+e.target.value)} />
+        <input type="range" min={1} max={30} step={1} value={caps} onChange={move(setCaps)} />
       </label>
       <div className="stats" aria-live="polite">
         <div className="stat">
@@ -370,11 +403,12 @@ function CalcCard({ lang }: { lang: Lang }) {
         </div>
       </div>
       <p className="card-note">{T.calc.note[lang]}</p>
+      {pending && <MissionHint text={T.calc.hint[lang]} />}
     </div>
   );
 }
 
-function ShareCard({ lang }: { lang: Lang }) {
+function ShareCard({ lang, onDone, pending }: MissionProps) {
   const [state, setState] = useState<"idle" | "copied" | "manual">("idle");
   const msg = T.share.msg[lang];
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
@@ -385,10 +419,12 @@ function ShareCard({ lang }: { lang: Lang }) {
     } catch {
       setState("manual"); // dentro de un iframe el portapapeles puede estar bloqueado
     }
+    onDone?.();
   };
   const share = async () => {
     try {
       await navigator.share({ text: msg });
+      onDone?.();
     } catch {
       /* la persona canceló o no está permitido */
     }
@@ -409,15 +445,28 @@ function ShareCard({ lang }: { lang: Lang }) {
         </button>
       </div>
       {state === "manual" && <p className="card-note">{T.share.manual[lang]}</p>}
+      {pending && state === "idle" && <MissionHint text={T.share.hint[lang]} />}
     </div>
   );
 }
 
-export function VisualCard({ kind, lang, onQuizDone }: { kind: CardKind; lang: Lang; onQuizDone?: () => void }) {
+export type CardMission = "quiz" | "math" | "share";
+
+export function VisualCard({
+  kind,
+  lang,
+  onMission,
+  done = [],
+}: {
+  kind: CardKind;
+  lang: Lang;
+  onMission?: (id: CardMission) => void;
+  done?: string[];
+}) {
   if (kind === "process") return <ProcessCard lang={lang} />;
-  if (kind === "quiz") return <QuizCard lang={lang} onDone={onQuizDone} />;
-  if (kind === "calc") return <CalcCard lang={lang} />;
-  if (kind === "share") return <ShareCard lang={lang} />;
+  if (kind === "quiz") return <QuizCard lang={lang} onDone={() => onMission?.("quiz")} pending={!done.includes("quiz")} />;
+  if (kind === "calc") return <CalcCard lang={lang} onDone={() => onMission?.("math")} pending={!done.includes("math")} />;
+  if (kind === "share") return <ShareCard lang={lang} onDone={() => onMission?.("share")} pending={!done.includes("share")} />;
 
   if (kind === "caps") {
     return (
