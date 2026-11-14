@@ -54,6 +54,8 @@ const TEXT = {
   send: { es: "Enviar", en: "Send" },
   talk: { es: "Hablar", en: "Talk" },
   typing: { es: "Escribiendo…", en: "Typing…" },
+  newChat: { es: "Nuevo chat", en: "New chat" },
+  switchRole: { es: "Cambiar perfil", en: "Switch profile" },
 };
 
 const ROLES: { role: Role; color: string; label: Record<Lang, string>; send: Record<Lang, string>; icon: React.ReactNode }[] = [
@@ -96,20 +98,21 @@ const ROLES: { role: Role; color: string; label: Record<Lang, string>; send: Rec
 
 const NEXT_CHIPS: Record<Lang, Record<Role, string[]>> = {
   es: {
-    resident: ["¿Qué tapas sirven?", "¿Qué pasa con las tapas?", "¿Cómo participo?"],
-    manager: ["Ver precios", "¿Cuál es la meta?", "¿Cómo pido una banca?"],
-    company: ["Ver precios", "¿Cómo participo?", "¿Qué pasa con las tapas?"],
-    student: ["¿Qué pasa con las tapas?", "¿Por qué importa?", "¿Quiénes son?"],
-    curious: ["¿Qué tapas sirven?", "¿Por qué importa?", "¿Cuál es la meta?"],
+    resident: ["¿Qué tapas sirven?", "Juega: ¿sirve o no?", "El viaje de una tapa", "¿Cómo participo?", "Comparte la campaña", "¿Por qué importa?"],
+    manager: ["Ver precios", "Calcula tu edificio", "¿Cómo pido una banca?", "¿Cuál es la meta?", "El viaje de una tapa", "Comparte la campaña"],
+    company: ["Ver precios", "Calcula tu oficina", "¿Cómo participo?", "El viaje de una tapa", "¿Por qué importa?"],
+    student: ["El viaje de una tapa", "¿Por qué importa?", "Juega: ¿sirve o no?", "¿Quiénes son?", "¿Cuál es la meta?"],
+    curious: ["El viaje de una tapa", "Juega: ¿sirve o no?", "¿Por qué importa?", "¿Cuál es la meta?", "¿Quiénes son?"],
   },
   en: {
-    resident: ["Which caps work?", "What happens to the caps?", "How do I join?"],
-    manager: ["See prices", "What's the goal?", "How do I order a bench?"],
-    company: ["See prices", "How do I join?", "What happens to the caps?"],
-    student: ["What happens to the caps?", "Why does it matter?", "Who are you?"],
-    curious: ["Which caps work?", "Why does it matter?", "What's the goal?"],
+    resident: ["Which caps work?", "Play: does it count?", "A cap's journey", "How do I join?", "Share the campaign", "Why does it matter?"],
+    manager: ["See prices", "Do the math for your building", "How do I order a bench?", "What's the goal?", "A cap's journey", "Share the campaign"],
+    company: ["See prices", "Do the math for your office", "How do I join?", "A cap's journey", "Why does it matter?"],
+    student: ["A cap's journey", "Why does it matter?", "Play: does it count?", "Who are you?", "What's the goal?"],
+    curious: ["A cap's journey", "Play: does it count?", "Why does it matter?", "What's the goal?", "Who are you?"],
   },
 };
+const CHIPS_SHOWN = 3;
 
 /* ---------- idioma (para la voz y los botones rápidos) ---------- */
 function detectLang(t: string, fallback: Lang): Lang {
@@ -156,6 +159,7 @@ export default function Page() {
   const [items, setItems] = useState<Item[]>([{ id: WELCOME_ID, from: "bot", text: "", lang: "es" }]);
   const [lang, setLangState] = useState<Lang>("es");
   const [role, setRole] = useState<Role | null>(null);
+  const [used, setUsed] = useState<number[]>([]); // botones rápidos ya usados (por posición)
   const [input, setInput] = useState("");
   const [sent, setSent] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -172,6 +176,7 @@ export default function Page() {
   const langRef = useRef<Lang>("es");
   const recRef = useRef<SpeechRec | null>(null);
   const submitRef = useRef<(raw: string) => void>(() => {});
+  const genRef = useRef(0);
 
   const atLimit = sent >= LIMIT;
 
@@ -189,7 +194,8 @@ export default function Page() {
       const userLang = detectLang(text, langRef.current);
       setLang(userLang);
       const newRole = detectRole(text);
-      if (newRole) setRole(newRole);
+      if (newRole) setRole((cur) => cur ?? newRole);
+      const gen = genRef.current;
       const topic = detectTopic(text);
       const card = topic?.card ?? null;
 
@@ -206,6 +212,7 @@ export default function Page() {
 
       const setBot = (patch: Partial<Item>) =>
         setItems((prev) => prev.map((it) => (it.id === botId ? { ...it, ...patch } : it)));
+      const stale = () => genRef.current !== gen; // la persona empezó un chat nuevo mientras llegaba la respuesta
 
       const messages: ApiMessage[] = [...history.current, { role: "user", content: text }];
       let full = "";
@@ -225,6 +232,10 @@ export default function Page() {
           for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (stale()) {
+              reader.cancel().catch(() => {});
+              return;
+            }
             full += decoder.decode(value, { stream: true });
             setBot({ text: full, pending: false });
           }
@@ -236,6 +247,8 @@ export default function Page() {
         full = full.trim();
         if (!full) failure = "error";
       }
+
+      if (stale()) return;
 
       if (failure) {
         setBot({ text: TEXT[failure][userLang], lang: userLang, pending: false, topic: null });
@@ -264,6 +277,30 @@ export default function Page() {
   useEffect(() => {
     submitRef.current = submit;
   }, [submit]);
+
+  /* ---------- volver al inicio ---------- */
+  // Empieza una conversación nueva. El contador de mensajes de la sesión se conserva.
+  const newChat = () => {
+    genRef.current += 1;
+    busyRef.current = false;
+    history.current = [];
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    setSpeakingId(null);
+    setBusy(false);
+    setItems([{ id: WELCOME_ID, from: "bot", text: "", lang }]);
+    setRole(null);
+    setUsed([]);
+    setInput("");
+  };
+  // Vuelve a mostrar las tarjetas de perfil sin borrar la conversación.
+  const switchRole = () => {
+    setRole(null);
+    setUsed([]);
+  };
+  const pickRole = (r: Role, text: string) => {
+    setRole(r);
+    submit(text);
+  };
 
   /* ---------- capacidades del navegador ---------- */
   useEffect(() => {
@@ -397,6 +434,16 @@ export default function Page() {
             <span>Plastic Fisherman</span>
           </span>
         </div>
+        <div className="top-actions">
+          {items.length > 1 && (
+            <button type="button" className="newchat" onClick={newChat}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 12a8 8 0 1 0 2.6-5.9" />
+                <path d="M4 4v5h5" />
+              </svg>
+              {TEXT.newChat[lang]}
+            </button>
+          )}
         <div className="langs" role="group" aria-label="Idioma · Language">
           <button type="button" aria-pressed={lang === "en"} onClick={() => setLang("en")}>
             EN
@@ -404,6 +451,7 @@ export default function Page() {
           <button type="button" aria-pressed={lang === "es"} onClick={() => setLang("es")}>
             ES
           </button>
+        </div>
         </div>
       </div>
 
@@ -489,7 +537,7 @@ export default function Page() {
                 className="role"
                 key={r.role}
                 style={{ "--c": r.color } as React.CSSProperties}
-                onClick={() => submit(r.send[lang])}
+                onClick={() => pickRole(r.role, r.send[lang])}
               >
                 <i>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -503,11 +551,26 @@ export default function Page() {
         )}
         {showQuick && role && (
           <div className="chips">
-            {NEXT_CHIPS[lang][role].map((label) => (
-              <button type="button" className="chip" key={label} onClick={() => submit(label)}>
-                {label}
-              </button>
-            ))}
+            {NEXT_CHIPS[lang][role]
+              .map((label, n) => ({ label, n }))
+              .filter((c) => !used.includes(c.n))
+              .slice(0, CHIPS_SHOWN)
+              .map(({ label, n }) => (
+                <button
+                  type="button"
+                  className="chip"
+                  key={label}
+                  onClick={() => {
+                    setUsed((u) => [...u, n]);
+                    submit(label);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            <button type="button" className="chip ghost" onClick={switchRole}>
+              ↺ {TEXT.switchRole[lang]}: {ROLES.find((r) => r.role === role)?.label[lang]}
+            </button>
           </div>
         )}
       </main>

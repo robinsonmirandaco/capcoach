@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 export type Lang = "es" | "en";
-export type CardKind = "caps" | "process" | "prices" | "goal" | "orgs" | "impact";
+export type CardKind = "caps" | "process" | "prices" | "goal" | "orgs" | "impact" | "calc" | "quiz" | "share";
 
 /**
  * Psicología del color, con la paleta del sitio de la campaña.
@@ -36,6 +36,15 @@ export function Bench({ dark = false }: { dark?: boolean }) {
 export function detectTopic(text: string): Topic | null {
   const s = text.toLowerCase();
   const has = (...w: string[]) => w.some((x) => s.includes(x));
+  // Contenido interactivo: juego, calculadora, compartir y la historia de una tapa.
+  if (has("juega", "juego", "jugar", "play", "game", "quiz", "sirve o no", "does it count"))
+    return { tone: "grass", label: { es: "Juego", en: "Game" }, card: "quiz" };
+  if (has("calcul", "do the math", "how fast", "qué tan rápido", "que tan rapido", "la cuenta"))
+    return { tone: "sun", label: { es: "La cuenta", en: "The math" }, card: "calc" };
+  if (has("compart", "share"))
+    return { tone: "grass", label: { es: "Tu parte", en: "Your part" }, card: "share" };
+  if (has("viaje", "journey", "historia de una tapa", "story"))
+    return { tone: "ocean", label: { es: "El viaje de una tapa", en: "A cap's journey" }, card: "process" };
   // Temas todavía no confirmados: coral y sin tarjeta, para no prometer nada.
   if (has("entrega", "delivery", "envío", "envio", "shipping", "placa", "plaque", "tarda", "how long", "por mes", "per month"))
     return { tone: "coral", label: { es: "Por confirmar", en: "Being confirmed" }, card: null };
@@ -56,7 +65,77 @@ export function detectTopic(text: string): Topic | null {
   return null;
 }
 
+const QUIZ: { q: Record<Lang, string>; ok: boolean; why: Record<Lang, string> }[] = [
+  {
+    q: { es: "Tapa de botella de agua con un 2 en el triángulo", en: "Water bottle cap with a 2 in the triangle" },
+    ok: true,
+    why: { es: "Sí. El #2 (HDPE) sirve. Enjuágala y déjala secar.", en: "Yes. #2 (HDPE) counts. Rinse it and let it dry." },
+  },
+  {
+    q: { es: "La botella de agua", en: "The water bottle itself" },
+    ok: false,
+    why: { es: "No. La botella es plástico #1 (PET). Aquí solo van las tapas.", en: "No. The bottle is plastic #1 (PET). Only the caps go here." },
+  },
+  {
+    q: { es: "Tapa de metal de una gaseosa", en: "Metal cap from a soda bottle" },
+    ok: false,
+    why: { es: "No. Las tapas de metal no van.", en: "No. Metal caps are left out." },
+  },
+  {
+    q: { es: "Tapa de un envase de yogur con un 5", en: "Yogurt tub lid with a 5" },
+    ok: true,
+    why: { es: "Sí. El #5 (PP) sirve, enjuagada y seca.", en: "Yes. #5 (PP) counts, rinsed and dry." },
+  },
+  {
+    q: { es: "Un corcho", en: "A cork" },
+    ok: false,
+    why: { es: "No. Los corchos no van.", en: "No. Corks are left out." },
+  },
+  {
+    q: { es: "Tapa plástica con restos de comida", en: "Plastic cap with food on it" },
+    ok: false,
+    why: { es: "Así no. Enjuágala, déjala secar y entonces sí.", en: "Not like that. Rinse it, let it dry, and then yes." },
+  },
+];
+
 const T = {
+  quiz: {
+    k: { es: "Juego", en: "Game" },
+    t: { es: "¿Sirve o no sirve?", en: "Does it count?" },
+    yes: { es: "Sirve", en: "It counts" },
+    no: { es: "No va", en: "Leave it out" },
+    next: { es: "Siguiente", en: "Next" },
+    again: { es: "Jugar otra vez", en: "Play again" },
+    score: { es: "aciertos de", en: "right out of" },
+    end: {
+      es: ["Buen comienzo. El número en la tapa es lo que decide.", "¡Casi! Ya sabes leer una tapa.", "¡Ojo de experto! Tus tapas ya pidieron puesto."],
+      en: ["Good start. The number on the cap is what decides.", "So close! You can read a cap now.", "Expert eye! Your caps have their seat saved."],
+    },
+  },
+  calc: {
+    k: { es: "La cuenta", en: "The math" },
+    t: { es: "¿Qué tan rápido llena tu edificio una banca?", en: "How fast can your building fill a bench?" },
+    apts: { es: "Apartamentos en el edificio", en: "Apartments in the building" },
+    caps: { es: "Tapas por apartamento cada semana", en: "Caps per apartment each week" },
+    weeks: { es: "semanas para una banca", en: "weeks to one bench" },
+    year: { es: "bancas al año", en: "benches a year" },
+    note: {
+      es: "Es un estimado con tus propios números. Una Bay Bench lleva 19,000 tapas y piezas.",
+      en: "This is an estimate from your own numbers. One Bay Bench takes 19,000 caps and pieces.",
+    },
+  },
+  share: {
+    k: { es: "Pasa la voz", en: "Spread the word" },
+    t: { es: "Un mensaje listo para tus vecinos", en: "A message ready for your neighbors" },
+    msg: {
+      es: "En nuestro edificio le estamos guardando un puesto a las tapas: 19,000 tapas plásticas se convierten en una banca para todos. Enjuaga las tuyas y déjalas en el contenedor del lobby. ¿Te sumas? #plasticfishing",
+      en: "Our building is saving its caps a seat: 19,000 plastic caps become a bench for everyone. Rinse yours and drop them in the lobby bin. Are you in? #plasticfishing",
+    },
+    share: { es: "Compartir", en: "Share" },
+    copy: { es: "Copiar", en: "Copy" },
+    copied: { es: "¡Copiado!", en: "Copied!" },
+    manual: { es: "Mantén presionado el texto para copiarlo.", en: "Press and hold the text to copy it." },
+  },
   caps: {
     k: { es: "Qué tapas sirven", en: "Which caps work" },
     t: { es: "Busca el número en el triángulo", en: "Look for the number in the triangle" },
@@ -196,8 +275,147 @@ function ProcessCard({ lang }: { lang: Lang }) {
   );
 }
 
+function QuizCard({ lang }: { lang: Lang }) {
+  const [i, setI] = useState(0);
+  const [picked, setPicked] = useState<boolean | null>(null);
+  const [score, setScore] = useState(0);
+  const done = i >= QUIZ.length;
+  const item = QUIZ[Math.min(i, QUIZ.length - 1)];
+  const right = picked !== null && picked === item.ok;
+  const pick = (v: boolean) => {
+    if (picked !== null) return;
+    setPicked(v);
+    if (v === item.ok) setScore((n) => n + 1);
+  };
+  return (
+    <div className="card tone-grass">
+      <p className="card-k">
+        {T.quiz.k[lang]} · {Math.min(i + 1, QUIZ.length)} / {QUIZ.length}
+      </p>
+      <p className="card-t">{T.quiz.t[lang]}</p>
+      {done ? (
+        <div className="quiz-end">
+          <p className="goal-n">
+            {score} <small>{T.quiz.score[lang]} {QUIZ.length}</small>
+          </p>
+          <p>{T.quiz.end[lang][score === QUIZ.length ? 2 : score >= 4 ? 1 : 0]}</p>
+          <div className="actions">
+            <button type="button" className="btn" onClick={() => { setI(0); setPicked(null); setScore(0); }}>
+              {T.quiz.again[lang]}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="quiz-q">{item.q[lang]}</p>
+          <div className="quiz-btns">
+            <button type="button" className={"qb yes-b" + (picked === true ? " on" : "")} disabled={picked !== null} onClick={() => pick(true)}>
+              ✓ {T.quiz.yes[lang]}
+            </button>
+            <button type="button" className={"qb no-b" + (picked === false ? " on" : "")} disabled={picked !== null} onClick={() => pick(false)}>
+              ✕ {T.quiz.no[lang]}
+            </button>
+          </div>
+          <div aria-live="polite">
+            {picked !== null && (
+              <div className={"quiz-fb " + (item.ok ? "yes" : "no")}>
+                <b>{right ? "🎯 " : "💡 "}</b>
+                {item.why[lang]}
+                <div className="actions">
+                  <button type="button" className="btn primary" onClick={() => { setI(i + 1); setPicked(null); }}>
+                    {T.quiz.next[lang]}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CalcCard({ lang }: { lang: Lang }) {
+  const [apts, setApts] = useState(200);
+  const [caps, setCaps] = useState(5);
+  const perWeek = apts * caps;
+  const weeks = Math.ceil(19000 / perWeek);
+  const perYear = (52 * perWeek) / 19000;
+  return (
+    <div className="card tone-sun">
+      <p className="card-k">{T.calc.k[lang]}</p>
+      <p className="card-t">{T.calc.t[lang]}</p>
+      <label className="slider">
+        <span>
+          {T.calc.apts[lang]} <b>{apts}</b>
+        </span>
+        <input type="range" min={10} max={600} step={10} value={apts} onChange={(e) => setApts(+e.target.value)} />
+      </label>
+      <label className="slider">
+        <span>
+          {T.calc.caps[lang]} <b>{caps}</b>
+        </span>
+        <input type="range" min={1} max={30} step={1} value={caps} onChange={(e) => setCaps(+e.target.value)} />
+      </label>
+      <div className="stats" aria-live="polite">
+        <div className="stat">
+          <b>{weeks}</b>
+          {T.calc.weeks[lang]}
+        </div>
+        <div className="stat">
+          <b style={{ color: "var(--grass-ink)" }}>{perYear.toFixed(1)}</b>
+          {T.calc.year[lang]}
+        </div>
+      </div>
+      <p className="card-note">{T.calc.note[lang]}</p>
+    </div>
+  );
+}
+
+function ShareCard({ lang }: { lang: Lang }) {
+  const [state, setState] = useState<"idle" | "copied" | "manual">("idle");
+  const msg = T.share.msg[lang];
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(msg);
+      setState("copied");
+    } catch {
+      setState("manual"); // dentro de un iframe el portapapeles puede estar bloqueado
+    }
+  };
+  const share = async () => {
+    try {
+      await navigator.share({ text: msg });
+    } catch {
+      /* la persona canceló o no está permitido */
+    }
+  };
+  return (
+    <div className="card tone-grass">
+      <p className="card-k">{T.share.k[lang]}</p>
+      <p className="card-t">{T.share.t[lang]}</p>
+      <p className="share-msg">{msg}</p>
+      <div className="actions">
+        {canShare && (
+          <button type="button" className="btn primary" onClick={share}>
+            {T.share.share[lang]}
+          </button>
+        )}
+        <button type="button" className="btn" onClick={copy}>
+          {state === "copied" ? T.share.copied[lang] : T.share.copy[lang]}
+        </button>
+      </div>
+      {state === "manual" && <p className="card-note">{T.share.manual[lang]}</p>}
+    </div>
+  );
+}
+
 export function VisualCard({ kind, lang }: { kind: CardKind; lang: Lang }) {
   if (kind === "process") return <ProcessCard lang={lang} />;
+  if (kind === "quiz") return <QuizCard lang={lang} />;
+  if (kind === "calc") return <CalcCard lang={lang} />;
+  if (kind === "share") return <ShareCard lang={lang} />;
 
   if (kind === "caps") {
     return (
