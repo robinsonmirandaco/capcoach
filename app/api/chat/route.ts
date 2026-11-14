@@ -23,6 +23,24 @@ function getSystemPrompt(): Promise<string> {
   return systemPromptCache;
 }
 
+// Misiones de la interfaz. El navegador manda cuáles completó la persona,
+// para que Cap Coach pueda acompañar su avance.
+const MISSIONS: Record<string, string> = {
+  caps: "aprender a leer una tapa",
+  quiz: "pasar el juego ¿sirve o no?",
+  journey: "seguir el viaje de una tapa",
+  math: "hacer la cuenta de su edificio",
+  share: "pasar la voz",
+};
+
+function progressNote(body: unknown): string {
+  const raw = (body as { done?: unknown } | null)?.done;
+  const done = Array.isArray(raw) ? Object.keys(MISSIONS).filter((id) => raw.includes(id)) : [];
+  const pending = Object.keys(MISSIONS).filter((id) => !done.includes(id));
+  const list = (ids: string[]) => (ids.length ? ids.map((id) => MISSIONS[id]).join("; ") : "ninguna");
+  return `\n\nAVANCE DE ESTA PERSONA EN LAS MISIONES\nCompletadas: ${list(done)}.\nPendientes: ${list(pending)}.`;
+}
+
 function json(status: number, error: string) {
   return Response.json({ error }, { status });
 }
@@ -70,7 +88,7 @@ export async function POST(request: Request) {
   if (!messages) return json(400, ERROR_MESSAGE);
 
   try {
-    const system = await getSystemPrompt();
+    const system = (await getSystemPrompt()) + progressNote(body);
     const client = new Anthropic(); // lee ANTHROPIC_API_KEY del entorno del servidor
 
     const stream = client.messages.stream({

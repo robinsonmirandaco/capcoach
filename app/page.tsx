@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bench, VisualCard, detectTopic, type CardKind, type Lang, type Topic } from "./cards";
+import { VisualCard, detectTopic, type CardKind, type Lang, type Topic } from "./cards";
+import { World, type Mood } from "./avatar";
 
 const LIMIT = 20;
 const MAXLEN = 300;
@@ -57,6 +58,21 @@ const TEXT = {
   typing: { es: "Escribiendo…", en: "Typing…" },
   newChat: { es: "Nuevo chat", en: "New chat" },
   tagline: { es: "Guárdale un puesto a tu tapa", en: "Save Your Cap a Seat" },
+  yourBench: { es: "Tu banca", en: "Your bench" },
+  missions: { es: "misiones", en: "missions" },
+  seeMissions: { es: "Ver misiones", en: "See missions" },
+  missionsTitle: { es: "Arma tu banca, misión por misión", en: "Build your bench, one mission at a time" },
+  missionsSub: {
+    es: "Cada misión que completas pinta una viga. Cap Coach te acompaña.",
+    en: "Every mission you complete paints a beam. Cap Coach is with you.",
+  },
+  start: { es: "Empezar", en: "Start" },
+  doneWord: { es: "Lograda", en: "Done" },
+  coachMe: { es: "Pídele un reto a tu coach", en: "Ask your coach for a challenge" },
+  coachAsk: { es: "Dame un reto para esta semana", en: "Give me a challenge for this week" },
+  benchFull: { es: "¡Banca completa! Ya eres parte del cambio.", en: "Bench complete! You are part of the change." },
+  close: { es: "Cerrar", en: "Close" },
+  tapMe: { es: "Tócame", en: "Tap me" },
   tapToTalk: { es: "Toca para hablar", en: "Tap to talk" },
   listeningStop: { es: "Te escucho… toca para terminar", en: "Listening… tap to stop" },
   thinking: { es: "Cap Coach está pensando…", en: "Cap Coach is thinking…" },
@@ -65,6 +81,67 @@ const TEXT = {
   orType: { es: "O escribe tu pregunta", en: "Or type your question" },
   voiceOn: { es: "Cap Coach lee las respuestas en voz alta", en: "Cap Coach reads answers aloud" },
   switchRole: { es: "Cambiar perfil", en: "Switch profile" },
+};
+
+/* ---------- misiones: el espacio de conciencia ---------- */
+type MissionId = "caps" | "quiz" | "journey" | "math" | "share";
+const MISSIONS: { id: MissionId; color: string; title: Record<Lang, string>; why: Record<Lang, string>; ask: Record<Lang, string> }[] = [
+  {
+    id: "caps",
+    color: "#4fae2c",
+    title: { es: "Aprende a leer una tapa", en: "Learn to read a cap" },
+    why: { es: "El número en el triángulo decide si sirve.", en: "The number in the triangle decides if it counts." },
+    ask: { es: "¿Qué tapas sirven?", en: "Which caps work?" },
+  },
+  {
+    id: "quiz",
+    color: "#27b07a",
+    title: { es: "Pasa el juego ¿sirve o no?", en: "Finish the game: does it count?" },
+    why: { es: "Seis casos para entrenar el ojo.", en: "Six cases to train your eye." },
+    ask: { es: "Juega: ¿sirve o no?", en: "Play: does it count?" },
+  },
+  {
+    id: "journey",
+    color: "#0f8fc9",
+    title: { es: "Sigue el viaje de una tapa", en: "Follow a cap's journey" },
+    why: { es: "De tu mano al taller, y del taller a la banca.", en: "From your hand to the workshop, and on to the bench." },
+    ask: { es: "Cuéntame el viaje de una tapa", en: "Tell me a cap's journey" },
+  },
+  {
+    id: "math",
+    color: "#f7c53d",
+    title: { es: "Haz la cuenta de tu edificio", en: "Do the math for your building" },
+    why: { es: "¿En cuántas semanas llenan una banca?", en: "How many weeks to fill one bench?" },
+    ask: { es: "Calcula mi edificio", en: "Do the math for my building" },
+  },
+  {
+    id: "share",
+    color: "#ef4f6b",
+    title: { es: "Pasa la voz", en: "Spread the word" },
+    why: { es: "Una banca se junta entre vecinos.", en: "A bench is built by neighbors together." },
+    ask: { es: "Comparte la campaña", en: "Share the campaign" },
+  },
+];
+const CARD_MISSION: Partial<Record<CardKind, MissionId>> = { caps: "caps", process: "journey", calc: "math", share: "share" };
+
+// Lo que dice el avatar cuando lo tocan. Solo datos de la campaña.
+const TIPS: Record<Lang, string[]> = {
+  es: [
+    "¡Hola! Tócame cuando quieras un dato. Aquí va uno: 19,000 tapas hacen una banca.",
+    "Busca el triángulo con el número. Si dice 2, 4, 5 o 6, esa tapa sirve.",
+    "La botella no va, solo la tapa. Enjuágala y déjala secar.",
+    "El plástico no se descompone como las hojas. Se rompe en pedacitos cada vez más pequeños.",
+    "Una banca lleva 17 vigas, y cada viga unas 1,100 tapas y piezas.",
+    "Todo se hace a mano en el taller de Plastic Fisherman, en Opa Locka.",
+  ],
+  en: [
+    "Hi! Tap me whenever you want a fact. Here is one: 19,000 caps make one bench.",
+    "Look for the triangle with the number. If it says 2, 4, 5 or 6, that cap counts.",
+    "The bottle stays out, only the cap goes in. Rinse it and let it dry.",
+    "Plastic does not break down like leaves. It splits into smaller and smaller bits.",
+    "One bench takes 17 beams, and each beam about 1,100 caps and pieces.",
+    "It is all made by hand at the Plastic Fisherman Workshop in Opa Locka.",
+  ],
 };
 
 const ROLES: { role: Role; color: string; label: Record<Lang, string>; send: Record<Lang, string>; icon: React.ReactNode }[] = [
@@ -192,6 +269,24 @@ export default function Page() {
   const speakRef = useRef<(id: number, text: string, l: Lang, auto?: boolean) => void>(() => {});
   const speakingRef = useRef<number | null>(null);
   const unlockedRef = useRef(false);
+  const [done, setDone] = useState<MissionId[]>([]); // misiones completadas
+  const doneRef = useRef<MissionId[]>([]);
+  const [panel, setPanel] = useState(false);
+  const [cheer, setCheer] = useState(false);
+  const [tip, setTip] = useState<string | null>(null);
+  const tipN = useRef(0);
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const complete = useCallback((id: MissionId) => {
+    if (doneRef.current.includes(id)) return;
+    doneRef.current = [...doneRef.current, id];
+    setDone(doneRef.current);
+    try {
+      localStorage.setItem("capcoach-missions", JSON.stringify(doneRef.current));
+    } catch {}
+    setCheer(true);
+    setTimeout(() => setCheer(false), 1800);
+  }, []);
 
   const atLimit = sent >= LIMIT;
 
@@ -248,7 +343,7 @@ export default function Page() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages }),
+          body: JSON.stringify({ messages, done: doneRef.current }),
         });
         if (res.status === 429) failure = "limit";
         else if (!res.ok || !res.body) failure = "error";
@@ -290,6 +385,8 @@ export default function Page() {
         history.current = [...messages, { role: "assistant", content: full }];
         setBot({ text: full, lang: answerLang, pending: false, card });
         if (voiceOutRef.current) speakRef.current(botId, full, answerLang, true);
+        const mission = card ? CARD_MISSION[card] : undefined;
+        if (mission) complete(mission);
         if (sentRef.current >= LIMIT) {
           setItems((prev) => [...prev, { id: nextId.current++, from: "bot", text: TEXT.limit[answerLang], lang: answerLang }]);
         }
@@ -298,7 +395,7 @@ export default function Page() {
       busyRef.current = false;
       setBusy(false);
     },
-    [setLang],
+    [setLang, complete],
   );
 
   useEffect(() => {
@@ -316,6 +413,7 @@ export default function Page() {
     setSpeakingId(null);
     setBusy(false);
     setItems([{ id: WELCOME_ID, from: "bot", text: "", lang }]);
+    setTip(null);
     setRole(null);
     setUsed([]);
     setInput("");
@@ -333,6 +431,13 @@ export default function Page() {
   /* ---------- capacidades del navegador ---------- */
   useEffect(() => {
     if (navigator.language?.toLowerCase().startsWith("en")) setLang("en");
+    try {
+      const saved = JSON.parse(localStorage.getItem("capcoach-missions") || "[]");
+      if (Array.isArray(saved)) {
+        doneRef.current = MISSIONS.map((m) => m.id).filter((id) => saved.includes(id));
+        setDone(doneRef.current);
+      }
+    } catch {}
     try {
       if (localStorage.getItem("capcoach-voice") === "off") {
         voiceOutRef.current = false;
@@ -446,6 +551,31 @@ export default function Page() {
     speakRef.current = speak;
   });
 
+  // Tocar el avatar: dice un dato de la campaña (sin gastar mensajes).
+  const pokeAvatar = () => {
+    // Antes de empezar, el avatar dice el saludo que ya está en pantalla.
+    if (items.length === 1 && tipN.current === 0) {
+      tipN.current = 1;
+      setCheer(true);
+      setTimeout(() => setCheer(false), 900);
+      speak(-1, TEXT.welcome[lang], lang, true);
+      return;
+    }
+    const list = TIPS[lang];
+    const text = list[tipN.current % list.length];
+    tipN.current += 1;
+    setTip(text);
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    tipTimer.current = setTimeout(() => setTip(null), 9000);
+    setCheer(true);
+    setTimeout(() => setCheer(false), 900);
+    speak(-1 - tipN.current, text, lang, true);
+  };
+  const startMission = (text: string) => {
+    setPanel(false);
+    submit(text);
+  };
+
   const toggleVoiceOut = () => {
     const next = !voiceOut;
     voiceOutRef.current = next;
@@ -464,6 +594,10 @@ export default function Page() {
   useEffect(() => {
     const el = chatRef.current;
     if (!el) return;
+    if (items.length === 1) {
+      el.scrollTop = 0;
+      return;
+    }
     // Si la respuesta y su tarjeta no caben, se muestra desde la pregunta y no desde el final.
     const asked = el.querySelectorAll<HTMLElement>(".row.user");
     const last = asked[asked.length - 1];
@@ -481,19 +615,15 @@ export default function Page() {
         : TEXT.tapToTalk[lang];
 
   const showQuick = !busy && !atLimit;
+  const mood: Mood = listening ? "listening" : busy ? "thinking" : speakingId !== null ? "speaking" : cheer ? "happy" : "idle";
+  const fresh = items.length === 1; // todavía no empieza la conversación
+  const allDone = done.length === MISSIONS.length;
 
   return (
     <div className="app" lang={lang}>
-      <header className="top">
-        <span className="avatar" aria-hidden="true">
-          <Bench />
-        </span>
-        <div className="who">
-          <h1>Cap Coach</h1>
-          <p>{TEXT.tagline[lang]}</p>
-        </div>
+      <header className={"stage" + (fresh ? " big" : "")}>
         <div className="right">
-          {items.length > 1 && (
+          {!fresh && (
             <button type="button" className="icon" onClick={newChat} aria-label={TEXT.newChat[lang]} title={TEXT.newChat[lang]}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M4 12a8 8 0 1 0 2.6-5.9" />
@@ -518,22 +648,100 @@ export default function Page() {
             </button>
           )}
         </div>
+        <button type="button" className="avatar-btn" onClick={pokeAvatar} aria-label={"Cap Coach. " + TEXT.tapMe[lang]} title={TEXT.tapMe[lang]}>
+          <World mood={mood} size={fresh ? 132 : 64} />
+        </button>
+        <div className="who">
+          <h1>Cap Coach</h1>
+          <p className={mood === "speaking" || mood === "listening" ? "live-line" : ""}>
+            {mood === "speaking" ? (
+              <>
+                <span className="bars" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                {TEXT.speakingNow[lang]}
+              </>
+            ) : mood === "listening" ? (
+              TEXT.listening[lang]
+            ) : mood === "thinking" ? (
+              TEXT.thinking[lang]
+            ) : (
+              TEXT.tagline[lang]
+            )}
+          </p>
+          {fresh && <p className="hello">{TEXT.welcome[lang]}</p>}
+          {tip && (
+            <p className="tip" role="status">
+              {tip}
+            </p>
+          )}
+        </div>
       </header>
 
-      <div className="facts">
-        <span>
-          <b>19,000</b> {TEXT.stats[lang][0]}
+      <button type="button" className={"quest" + (allDone ? " full" : "")} onClick={() => setPanel(true)} aria-haspopup="dialog">
+        <span className="slats" aria-hidden="true">
+          {MISSIONS.map((m) => (
+            <i key={m.id} style={done.includes(m.id) ? { background: m.color } : undefined} className={done.includes(m.id) ? "on" : ""} />
+          ))}
         </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          <b>84</b> {TEXT.stats[lang][1]}
+        <span className="quest-t">
+          <b>{TEXT.yourBench[lang]}:</b> {done.length} / {MISSIONS.length} {TEXT.missions[lang]}
         </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          <b>1</b> {TEXT.stats[lang][2]}
-        </span>
-        <i className="facts-bar" aria-hidden="true" />
-      </div>
+        <span className="quest-go">{TEXT.seeMissions[lang]} ›</span>
+      </button>
+
+      {panel && (
+        <div className="sheet" role="dialog" aria-modal="true" aria-label={TEXT.missionsTitle[lang]}>
+          <div className="sheet-in">
+            <button type="button" className="icon sheet-x" onClick={() => setPanel(false)} aria-label={TEXT.close[lang]}>
+              ✕
+            </button>
+            <p className="card-k" style={{ color: "var(--ocean-ink)" }}>
+              {TEXT.yourBench[lang]} · {done.length} / {MISSIONS.length}
+            </p>
+            <h2>{allDone ? TEXT.benchFull[lang] : TEXT.missionsTitle[lang]}</h2>
+            <p className="sheet-sub">{TEXT.missionsSub[lang]}</p>
+            <div className="bigbench" aria-hidden="true">
+              <div className="bb-seat">
+                {MISSIONS.map((m) => (
+                  <i key={m.id} style={done.includes(m.id) ? { background: m.color } : undefined} />
+                ))}
+              </div>
+              <div className="bb-legs">
+                <i />
+                <i />
+              </div>
+            </div>
+            <ol className="mlist">
+              {MISSIONS.map((m, n) => {
+                const ok = done.includes(m.id);
+                return (
+                  <li key={m.id} className={ok ? "ok" : ""} style={{ "--c": m.color } as React.CSSProperties}>
+                    <i aria-hidden="true">{ok ? "✓" : n + 1}</i>
+                    <div>
+                      <b>{m.title[lang]}</b>
+                      <span>{m.why[lang]}</span>
+                    </div>
+                    {ok ? (
+                      <em>{TEXT.doneWord[lang]}</em>
+                    ) : (
+                      <button type="button" className="btn primary" disabled={busy || atLimit} onClick={() => startMission(m.ask[lang])}>
+                        {TEXT.start[lang]}
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+            <button type="button" className="btn coach" disabled={busy || atLimit} onClick={() => startMission(TEXT.coachAsk[lang])}>
+              <World size={26} /> {TEXT.coachMe[lang]}
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="chat" ref={chatRef} aria-live="polite">
         {items.map((it) => {
@@ -548,13 +756,11 @@ export default function Page() {
             );
           }
           const isWelcome = it.id === WELCOME_ID;
+          if (isWelcome && fresh) return null; // el saludo lo dice el avatar, arriba
           const text = isWelcome ? TEXT.welcome[lang] : it.text;
           const itemLang = isWelcome ? lang : it.lang;
           return (
             <div className="row bot" key={it.id}>
-              <div className="mini">
-                <Bench />
-              </div>
               {it.pending ? (
                 <div className="bubble typing" aria-label={TEXT.typing[lang]}>
                   <span></span>
@@ -570,7 +776,7 @@ export default function Page() {
                     </span>
                   )}
                   <div className={"bubble" + (it.topic ? " toned tone-" + it.topic.tone : "")}>{text}</div>
-                  {it.card && <VisualCard kind={it.card} lang={itemLang} />}
+                  {it.card && <VisualCard kind={it.card} lang={itemLang} onQuizDone={() => complete("quiz")} />}
                   {canSpeak && (
                     <button
                       type="button"
@@ -698,6 +904,10 @@ export default function Page() {
         </form>
         <div className="sub">
           <span className="count">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="lg" src="/logos/a-cleaner-planet.png" alt="A Cleaner Planet" width={26} height={26} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="lg" src="/logos/plastic-fisherman.png" alt="Plastic Fisherman" width={26} height={26} />
             <span className="meter" aria-hidden="true">
               <span style={{ width: `${100 - (sent / LIMIT) * 100}%` }} />
             </span>

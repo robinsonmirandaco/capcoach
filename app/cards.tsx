@@ -45,6 +45,8 @@ export function detectTopic(text: string): Topic | null {
     return { tone: "grass", label: { es: "Tu parte", en: "Your part" }, card: "share" };
   if (has("viaje", "journey", "historia de una tapa", "story"))
     return { tone: "ocean", label: { es: "El viaje de una tapa", en: "A cap's journey" }, card: "process" };
+  if (has("reto", "challenge", "coach me", "mi coach"))
+    return { tone: "grass", label: { es: "Tu reto", en: "Your challenge" }, card: null };
   // Temas todavía no confirmados: coral y sin tarjeta, para no prometer nada.
   if (has("entrega", "delivery", "envío", "envio", "shipping", "placa", "plaque", "tarda", "how long", "por mes", "per month"))
     return { tone: "coral", label: { es: "Por confirmar", en: "Being confirmed" }, card: null };
@@ -275,7 +277,7 @@ function ProcessCard({ lang }: { lang: Lang }) {
   );
 }
 
-function QuizCard({ lang }: { lang: Lang }) {
+function QuizCard({ lang, onDone }: { lang: Lang; onDone?: () => void }) {
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState<boolean | null>(null);
   const [score, setScore] = useState(0);
@@ -322,7 +324,7 @@ function QuizCard({ lang }: { lang: Lang }) {
                 <b>{right ? "🎯 " : "💡 "}</b>
                 {item.why[lang]}
                 <div className="actions">
-                  <button type="button" className="btn primary" onClick={() => { setI(i + 1); setPicked(null); }}>
+                  <button type="button" className="btn primary" onClick={() => { if (i + 1 >= QUIZ.length) onDone?.(); setI(i + 1); setPicked(null); }}>
                     {T.quiz.next[lang]}
                   </button>
                 </div>
@@ -411,9 +413,9 @@ function ShareCard({ lang }: { lang: Lang }) {
   );
 }
 
-export function VisualCard({ kind, lang }: { kind: CardKind; lang: Lang }) {
+export function VisualCard({ kind, lang, onQuizDone }: { kind: CardKind; lang: Lang; onQuizDone?: () => void }) {
   if (kind === "process") return <ProcessCard lang={lang} />;
-  if (kind === "quiz") return <QuizCard lang={lang} />;
+  if (kind === "quiz") return <QuizCard lang={lang} onDone={onQuizDone} />;
   if (kind === "calc") return <CalcCard lang={lang} />;
   if (kind === "share") return <ShareCard lang={lang} />;
 
