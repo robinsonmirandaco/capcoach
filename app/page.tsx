@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { VisualCard, detectTopic, type CardKind, type Lang, type Topic } from "./cards";
 import { World, type Mood } from "./avatar";
+import { SAMPLE, forSpeech, prosody, rankVoices, regionLabel, splitSentences, toneToMood, voiceLabel, type VoiceMood } from "./voice";
 
 const LIMIT = 20;
 const MAXLEN = 300;
@@ -73,6 +74,15 @@ const TEXT = {
   benchFull: { es: "¡Banca completa! Ya eres parte del cambio.", en: "Bench complete! You are part of the change." },
   close: { es: "Cerrar", en: "Close" },
   tapMe: { es: "Tócame", en: "Tap me" },
+  voiceTitle: { es: "Voz del coach", en: "Coach voice" },
+  readAloud: { es: "Leer las respuestas en voz alta", en: "Read answers aloud" },
+  tryVoice: { es: "Probar voz", en: "Try voice" },
+  recommended: { es: "Recomendada", en: "Recommended" },
+  noVoices: { es: "Este navegador no tiene voces en este idioma.", en: "This browser has no voices in this language." },
+  basicVoices: {
+    es: "En este navegador solo hay voces básicas. Las más naturales están en Microsoft Edge y Google Chrome.",
+    en: "This browser only has basic voices. The most natural ones are in Microsoft Edge and Google Chrome.",
+  },
   tapToTalk: { es: "Toca para hablar", en: "Tap to talk" },
   listeningStop: { es: "Te escucho… toca para terminar", en: "Listening… tap to stop" },
   thinking: { es: "Cap Coach está pensando…", en: "Cap Coach is thinking…" },
@@ -266,8 +276,12 @@ export default function Page() {
   const [voiceOut, setVoiceOut] = useState(true); // leer las respuestas en voz alta
   const voiceOutRef = useRef(true);
   const [heard, setHeard] = useState(""); // lo que el micrófono va entendiendo
-  const speakRef = useRef<(id: number, text: string, l: Lang, auto?: boolean) => void>(() => {});
+  const speakRef = useRef<(id: number, text: string, l: Lang, auto?: boolean, vmood?: VoiceMood) => void>(() => {});
   const speakingRef = useRef<number | null>(null);
+  const runRef = useRef(0); // cada lectura nueva invalida la anterior
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voicePick, setVoicePick] = useState<Partial<Record<Lang, string>>>({});
+  const [voicePanel, setVoicePanel] = useState(false);
   const unlockedRef = useRef(false);
   const [done, setDone] = useState<MissionId[]>([]); // misiones completadas
   const doneRef = useRef<MissionId[]>([]);
@@ -308,6 +322,7 @@ export default function Page() {
           window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
         } catch {}
       }
+      runRef.current += 1;
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       speakingRef.current = null;
       setSpeakingId(null);
@@ -384,7 +399,7 @@ export default function Page() {
         setLang(answerLang);
         history.current = [...messages, { role: "assistant", content: full }];
         setBot({ text: full, lang: answerLang, pending: false, card });
-        if (voiceOutRef.current) speakRef.current(botId, full, answerLang, true);
+        if (voiceOutRef.current) speakRef.current(botId, full, answerLang, true, toneToMood(topic?.tone));
         const mission = card ? CARD_MISSION[card] : undefined;
         if (mission) complete(mission);
         if (sentRef.current >= LIMIT) {
@@ -445,9 +460,18 @@ export default function Page() {
       }
     } catch {}
 
+    let offVoices = () => {};
     if ("speechSynthesis" in window) {
       setCanSpeak(true);
-      window.speechSynthesis.getVoices(); // precarga la lista de voces
+      const synth = window.speechSynthesis;
+      const load = () => setVoices(synth.getVoices());
+      load(); // en Chrome la lista llega después, con el evento voiceschanged
+      synth.addEventListener?.("voiceschanged", load);
+      offVoices = () => synth.removeEventListener?.("voiceschanged", load);
+      try {
+        const saved = JSON.parse(localStorage.getItem("capcoach-voice-pick") || "{}");
+        if (saved && typeof saved === "object") setVoicePick(saved);
+      } catch {}
     }
 
     const w = window as unknown as {
@@ -455,13 +479,13 @@ export default function Page() {
       webkitSpeechRecognition?: new () => SpeechRec;
     };
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR) return offVoices;
 
     let rec: SpeechRec;
     try {
       rec = new SR();
     } catch {
-      return;
+      return offVoices;
     }
     rec.interimResults = true;
     rec.continuous = false;
@@ -488,6 +512,7 @@ export default function Page() {
     setMicVisible(true);
 
     return () => {
+      offVoices();
       try {
         rec.abort();
       } catch {}
@@ -503,9 +528,7 @@ export default function Page() {
       return;
     }
     try {
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-      speakingRef.current = null;
-      setSpeakingId(null);
+      stopSpeaking();
       setHeard("");
       rec.lang = langRef.current === "en" ? "en-US" : "es-US";
       rec.start();
@@ -515,34 +538,52 @@ export default function Page() {
     }
   };
 
-  /* ---------- texto a voz ---------- */
-  const speak = (id: number, text: string, l: Lang, auto = false) => {
+  /* ---------- texto a voz: la voz del coach ---------- */
+  const ranked = { es: rankVoices(voices, "es"), en: rankVoices(voices, "en") };
+  const pickVoice = (l: Lang): SpeechSynthesisVoice | undefined => {
+    const chosen = voicePick[l] && voices.find((v) => v.name === voicePick[l]);
+    return chosen || ranked[l][0]?.v || voices.find((v) => (v.lang || "").toLowerCase().startsWith(l));
+  };
+
+  const stopSpeaking = () => {
+    runRef.current += 1;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    speakingRef.current = null;
+    setSpeakingId(null);
+  };
+
+  const speak = (id: number, text: string, l: Lang, auto = false, vmood: VoiceMood = "warm") => {
     if (!("speechSynthesis" in window)) return;
     try {
       const synth = window.speechSynthesis;
       if (!auto && speakingRef.current === id) {
-        synth.cancel();
-        speakingRef.current = null;
-        setSpeakingId(null);
+        stopSpeaking();
         return;
       }
       synth.cancel();
-      const u = new SpeechSynthesisUtterance(text.replace(/[•*#_]/g, ""));
-      u.lang = l === "en" ? "en-US" : "es-US";
-      const voices = synth.getVoices();
-      const voice =
-        voices.find((v) => v.lang?.replace("_", "-").toLowerCase() === u.lang.toLowerCase()) ||
-        voices.find((v) => v.lang?.toLowerCase().startsWith(l));
-      if (voice) u.voice = voice;
-      u.onend = u.onerror = () => {
-        if (speakingRef.current === id) {
-          speakingRef.current = null;
-          setSpeakingId(null);
-        }
+      const run = ++runRef.current;
+      const parts = splitSentences(forSpeech(text, l));
+      if (!parts.length) return;
+      const voice = pickVoice(l);
+      const finish = () => {
+        if (runRef.current !== run) return; // ya empezó otra lectura
+        speakingRef.current = null;
+        setSpeakingId(null);
       };
       speakingRef.current = id;
       setSpeakingId(id);
-      synth.speak(u);
+      parts.forEach((part, i) => {
+        const u = new SpeechSynthesisUtterance(part);
+        u.lang = voice?.lang || (l === "en" ? "en-US" : "es-US");
+        if (voice) u.voice = voice;
+        const p = prosody(vmood, part);
+        u.rate = p.rate;
+        u.pitch = p.pitch;
+        u.onerror = finish;
+        if (i === parts.length - 1) u.onend = finish;
+        synth.speak(u);
+      });
+      synth.resume(); // Chrome a veces deja la cola en pausa después de cancel()
     } catch {
       setCanSpeak(false);
     }
@@ -558,7 +599,7 @@ export default function Page() {
       tipN.current = 1;
       setCheer(true);
       setTimeout(() => setCheer(false), 900);
-      speak(-1, TEXT.welcome[lang], lang, true);
+      speak(-1, TEXT.welcome[lang], lang, true, "upbeat");
       return;
     }
     const list = TIPS[lang];
@@ -569,7 +610,7 @@ export default function Page() {
     tipTimer.current = setTimeout(() => setTip(null), 9000);
     setCheer(true);
     setTimeout(() => setCheer(false), 900);
-    speak(-1 - tipN.current, text, lang, true);
+    speak(-1 - tipN.current, text, lang, true, "upbeat");
   };
   const startMission = (text: string) => {
     setPanel(false);
@@ -583,11 +624,26 @@ export default function Page() {
     try {
       localStorage.setItem("capcoach-voice", next ? "on" : "off");
     } catch {}
-    if (!next && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      speakingRef.current = null;
-      setSpeakingId(null);
-    }
+    if (!next) stopSpeaking();
+  };
+
+  useEffect(() => {
+    if (!voicePanel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setVoicePanel(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [voicePanel]);
+
+  const chooseVoice = (name: string) => {
+    const next = { ...voicePick, [lang]: name };
+    setVoicePick(next);
+    try {
+      localStorage.setItem("capcoach-voice-pick", JSON.stringify(next));
+    } catch {}
+    const v = voices.find((x) => x.name === name);
+    if (v) setTimeout(() => speakRef.current(-100, SAMPLE[lang], lang, true, "upbeat"), 0);
   };
 
   /* ---------- scroll al final ---------- */
@@ -640,7 +696,15 @@ export default function Page() {
             </button>
           </div>
           {canSpeak && (
-            <button type="button" className="icon" aria-pressed={voiceOut} aria-label={TEXT.voiceOn[lang]} title={TEXT.voiceOn[lang]} onClick={toggleVoiceOut}>
+            <button
+              type="button"
+              className={"icon" + (voiceOut ? " on" : "")}
+              aria-expanded={voicePanel}
+              aria-haspopup="dialog"
+              aria-label={TEXT.voiceTitle[lang]}
+              title={TEXT.voiceTitle[lang]}
+              onClick={() => setVoicePanel((v) => !v)}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M4 9v6h4l5 4V5L8 9z" />
                 {voiceOut ? <path d="M17 9a4 4 0 0 1 0 6" /> : <path d="M17 9l5 6M22 9l-5 6" />}
@@ -648,6 +712,42 @@ export default function Page() {
             </button>
           )}
         </div>
+        {voicePanel && (
+          <>
+            <div className="vpop-back" onClick={() => setVoicePanel(false)} aria-hidden="true" />
+            <div className="vpop" role="dialog" aria-label={TEXT.voiceTitle[lang]}>
+              <label className="switch">
+                <input type="checkbox" checked={voiceOut} onChange={toggleVoiceOut} />
+                <span className="track" aria-hidden="true" />
+                {TEXT.readAloud[lang]}
+              </label>
+              <p className="card-k">{TEXT.voiceTitle[lang]}</p>
+              {ranked[lang].length === 0 ? (
+                <p className="card-note">{TEXT.noVoices[lang]}</p>
+              ) : (
+                <div className="vlist" role="radiogroup" aria-label={TEXT.voiceTitle[lang]}>
+                  {ranked[lang].slice(0, 5).map(({ v }, n) => {
+                    const active = pickVoice(lang)?.name === v.name;
+                    return (
+                      <button type="button" role="radio" aria-checked={active} className={"vopt" + (active ? " on" : "")} key={v.name} onClick={() => chooseVoice(v.name)}>
+                        <span className="dot" aria-hidden="true" />
+                        <span className="vname">
+                          {voiceLabel(v)}
+                          <small>{regionLabel(v, lang)}</small>
+                        </span>
+                        {n === 0 && <em>{TEXT.recommended[lang]}</em>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {ranked[lang].length > 0 && ranked[lang][0].score < 30 && <p className="card-note">{TEXT.basicVoices[lang]}</p>}
+              <button type="button" className="btn primary" onClick={() => speak(-100, SAMPLE[lang], lang, false, "upbeat")}>
+                ▶ {TEXT.tryVoice[lang]}
+              </button>
+            </div>
+          </>
+        )}
         <button type="button" className="avatar-btn" onClick={pokeAvatar} aria-label={"Cap Coach. " + TEXT.tapMe[lang]} title={TEXT.tapMe[lang]}>
           <World mood={mood} size={fresh ? 132 : 64} />
         </button>
@@ -781,7 +881,7 @@ export default function Page() {
                     <button
                       type="button"
                       className={"speak" + (speakingId === it.id ? " on" : "")}
-                      onClick={() => speak(it.id, text, itemLang)}
+                      onClick={() => speak(it.id, text, itemLang, false, isWelcome ? "upbeat" : toneToMood(it.topic?.tone))}
                       aria-pressed={speakingId === it.id}
                     >
                       {speakingId === it.id ? (
