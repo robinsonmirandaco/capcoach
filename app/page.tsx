@@ -155,6 +155,9 @@ const TIPS: Record<Lang, string[]> = {
     "El plástico no se descompone como las hojas. Se rompe en pedacitos cada vez más pequeños.",
     "Una banca lleva 17 vigas, y cada viga unas 1,100 tapas y piezas.",
     "Todo se hace a mano en el taller de Plastic Fisherman, en Opa Locka.",
+    "Mi amiga la botella-pez viene del logo de Plastic Fisherman. Ojo: de la botella solo guardamos la tapa.",
+    "A Cleaner Planet lo lleva en su logo: una operación a la vez. Y aquí, una tapa a la vez.",
+    "Plastic Fisherman lo resume en tres palabras: inspirar, educar y transformar. Tu tapa hace las tres.",
   ],
   en: [
     "Hi! Tap me whenever you want a fact. Here is one: 19,000 caps make one bench.",
@@ -163,6 +166,9 @@ const TIPS: Record<Lang, string[]> = {
     "Plastic does not break down like leaves. It splits into smaller and smaller bits.",
     "One bench takes 17 beams, and each beam about 1,100 caps and pieces.",
     "It is all made by hand at the Plastic Fisherman Workshop in Opa Locka.",
+    "My buddy the bottle-fish comes from the Plastic Fisherman logo. Heads up: from the bottle, we only keep the cap.",
+    "A Cleaner Planet says it right on its logo: one operation at a time. And here, one cap at a time.",
+    "Plastic Fisherman sums it up in three words: inspire, educate, transform. Your cap does all three.",
   ],
 };
 
