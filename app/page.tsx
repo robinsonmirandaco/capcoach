@@ -1,14 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Bench, VisualCard, detectCard, type CardKind, type Lang } from "./cards";
 
 const LIMIT = 20;
 const MAXLEN = 300;
 const EMAIL = "contact@plasticfisherman.com";
+const WELCOME_ID = 0;
 
-type Lang = "es" | "en";
 type Role = "resident" | "manager" | "company" | "student" | "curious";
-type Item = { id: number; from: "user" | "bot"; text: string; lang: Lang; pending?: boolean };
+type Item = {
+  id: number;
+  from: "user" | "bot";
+  text: string;
+  lang: Lang;
+  pending?: boolean;
+  card?: CardKind | null;
+};
 type ApiMessage = { role: "user" | "assistant"; content: string };
 
 const TEXT = {
@@ -20,38 +28,94 @@ const TEXT = {
     es: `Ups, no pude responder. Escríbenos a ${EMAIL}.`,
     en: `Oops, I couldn't answer. Write to us at ${EMAIL}.`,
   },
-  welcome:
-    "¡Hola! Soy Cap Coach. Te cuento cómo 19,000 tapas se convierten en una banca. ¿Quién me escribe: residente de un edificio, administrador o desarrollador, empresa, estudiante o persona curiosa?\n\nHi! I'm Cap Coach. Who's visiting today: resident, building manager or developer, company, student or just curious?",
+  welcome: {
+    es: "¡Hola! Soy Cap Coach. Te cuento cómo 19,000 tapas se convierten en una banca. ¿Quién me escribe?",
+    en: "Hi! I'm Cap Coach. I can tell you how 19,000 caps become a bench. Who's visiting today?",
+  },
+  kicker: { es: "Guárdale un puesto a tu tapa", en: "Save your cap a seat" },
+  title: { es: "Pregúntale a Cap Coach.", en: "Ask Cap Coach." },
+  sub: {
+    es: "Una tapa parece poca cosa. 19,000 son una banca donde te puedes sentar.",
+    en: "One bottle cap looks like nothing. 19,000 caps are a bench you can sit on.",
+  },
+  stats: {
+    es: ["tapas", "libras", "banca"],
+    en: ["caps", "pounds", "bench"],
+  },
+  placeholder: { es: "Escribe o habla", en: "Type or talk" },
+  placeholderNoMic: { es: "Escribe tu pregunta", en: "Type your question" },
+  listening: { es: "Te escucho…", en: "Listening…" },
+  limitReached: { es: "Límite alcanzado", en: "Limit reached" },
+  listen: { es: "Escuchar", en: "Listen" },
+  stop: { es: "Detener", en: "Stop" },
+  messages: { es: "Mensajes", en: "Messages" },
+  questions: { es: "¿Dudas?", en: "Questions?" },
+  send: { es: "Enviar", en: "Send" },
+  talk: { es: "Hablar", en: "Talk" },
+  typing: { es: "Escribiendo…", en: "Typing…" },
 };
 
-const ROLE_CHIPS: Record<Lang, string[]> = {
-  es: ["Soy residente", "Administro un edificio", "Empresa", "Estudiante", "Solo curiosidad"],
-  en: ["Resident", "Building manager", "Company", "Student", "Just curious"],
-};
+const ROLES: { role: Role; color: string; label: Record<Lang, string>; send: Record<Lang, string>; icon: React.ReactNode }[] = [
+  {
+    role: "resident",
+    color: "#3f9b2f",
+    label: { es: "Residente", en: "Resident" },
+    send: { es: "Soy residente de un edificio", en: "I'm a building resident" },
+    icon: <path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z" />,
+  },
+  {
+    role: "manager",
+    color: "#0b8fc9",
+    label: { es: "Administro un edificio", en: "Building manager" },
+    send: { es: "Administro un edificio", en: "I'm a building manager" },
+    icon: <path d="M5 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v5h3a1 1 0 0 1 1 1v11zm3-13h2V6H8zm0 4h2v-2H8zm0 4h2v-2H8zm4-8h1V6h-1zm0 4h1v-2h-1zm3 4h2v-2h-2z" />,
+  },
+  {
+    role: "company",
+    color: "#d9a916",
+    label: { es: "Empresa", en: "Company" },
+    send: { es: "Escribo de parte de una empresa", en: "I'm writing on behalf of a company" },
+    icon: <path d="M9 4h6a1 1 0 0 1 1 1v2h4a1 1 0 0 1 1 1v4H3V8a1 1 0 0 1 1-1h4V5a1 1 0 0 1 1-1zm1 3h4V6h-4zM3 14h8v2h2v-2h8v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />,
+  },
+  {
+    role: "student",
+    color: "#d9646e",
+    label: { es: "Estudiante", en: "Student" },
+    send: { es: "Soy estudiante", en: "I'm a student" },
+    icon: <path d="M12 4 2 9l10 5 8-4v6h2V9zM6 13.5V17c0 1.5 2.7 3 6 3s6-1.5 6-3v-3.5l-6 3z" />,
+  },
+  {
+    role: "curious",
+    color: "#8a5fd0",
+    label: { es: "Solo curiosidad", en: "Just curious" },
+    send: { es: "Solo tengo curiosidad", en: "I'm just curious" },
+    icon: <path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2zM9 20h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z" />,
+  },
+];
 
 const NEXT_CHIPS: Record<Lang, Record<Role, string[]>> = {
   es: {
     resident: ["¿Qué tapas sirven?", "¿Qué pasa con las tapas?", "¿Cómo participo?"],
-    manager: ["Ver precios", "¿Cuánto tarda la entrega?", "¿Puede llevar una placa?"],
+    manager: ["Ver precios", "¿Cuál es la meta?", "¿Cómo pido una banca?"],
     company: ["Ver precios", "¿Cómo participo?", "¿Qué pasa con las tapas?"],
-    student: ["¿Por qué importa?", "¿Qué tapas sirven?", "¿Quiénes son?"],
+    student: ["¿Qué pasa con las tapas?", "¿Por qué importa?", "¿Quiénes son?"],
     curious: ["¿Qué tapas sirven?", "¿Por qué importa?", "¿Cuál es la meta?"],
   },
   en: {
     resident: ["Which caps work?", "What happens to the caps?", "How do I join?"],
-    manager: ["See prices", "How long is delivery?", "Can it have a plaque?"],
+    manager: ["See prices", "What's the goal?", "How do I order a bench?"],
     company: ["See prices", "How do I join?", "What happens to the caps?"],
-    student: ["Why does it matter?", "Which caps work?", "Who are you?"],
+    student: ["What happens to the caps?", "Why does it matter?", "Who are you?"],
     curious: ["Which caps work?", "Why does it matter?", "What's the goal?"],
   },
 };
 
 /* ---------- idioma (para la voz y los botones rápidos) ---------- */
-function detectLang(t: string, fallback: Lang = "es"): Lang {
+function detectLang(t: string, fallback: Lang): Lang {
   const s = t.toLowerCase();
   if (/[áéíóúñ¿¡]/.test(s)) return "es";
-  const es = (s.match(/\b(que|como|tapa|tapas|banca|bancas|hola|quiero|puedo|donde|precio|precios|cuanto|soy|el|la|los|las|de|para|por|una|un|es|mi|tu|edificio|residente|estudiante|empresa|curios[oa]|ver|sirven|pasa|meta|participo|administro|gracias|con|en|y)\b/g) || []).length;
-  const en = (s.match(/\b(what|how|cap|caps|bench|benches|hi|hello|want|can|where|price|prices|much|i'm|im|the|for|is|my|your|building|resident|student|company|curious|just|see|which|who|why|does|it|you|are|to|long|delivery|join|have|a|work|happens|goal|manager|matter|thanks|thank|and|with|of)\b/g) || []).length;
+  const es = (s.match(/\b(que|como|tapa|tapas|banca|bancas|hola|quiero|puedo|donde|precio|precios|cuanto|soy|el|la|los|las|de|para|por|una|un|es|mi|tu|edificio|residente|estudiante|empresa|curios[oa]|curiosidad|ver|sirven|pasa|meta|participo|administro|gracias|con|en|y|solo|tengo|escribo)\b/g) || []).length;
+  const en = (s.match(/\b(what|how|cap|caps|bench|benches|hi|hello|want|can|where|price|prices|much|i'm|im|the|for|is|my|your|building|resident|student|company|curious|just|see|which|who|why|does|it|you|are|to|long|delivery|join|have|a|work|happens|goal|manager|matter|thanks|thank|and|with|of|do|order)\b/g) || []).length;
   if (en === es) return fallback;
   return en > es ? "en" : "es";
 }
@@ -80,18 +144,6 @@ type SpeechRec = {
   abort: () => void;
 };
 
-const BotIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 40 40" aria-hidden="true">
-    <rect x="4" y="10" width="32" height="10" rx="2" fill="#0b2a3c" />
-    <circle cx="11" cy="15" r="2.2" fill="#f2c230" />
-    <circle cx="17" cy="15" r="2.2" fill="#e0457b" />
-    <circle cx="23" cy="15" r="2.2" fill="#5cc8a8" />
-    <circle cx="29" cy="15" r="2.2" fill="#149ac9" />
-    <rect x="7" y="20" width="5" height="12" rx="1" fill="#0b2a3c" />
-    <rect x="28" y="20" width="5" height="12" rx="1" fill="#0b2a3c" />
-  </svg>
-);
-
 const SpeakerIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M4 9h4l5-4v14l-5-4H4z" />
@@ -100,8 +152,9 @@ const SpeakerIcon = () => (
 );
 
 export default function Page() {
-  const [items, setItems] = useState<Item[]>([{ id: 0, from: "bot", text: TEXT.welcome, lang: "es" }]);
-  const [chips, setChips] = useState<string[]>(ROLE_CHIPS.es);
+  const [items, setItems] = useState<Item[]>([{ id: WELCOME_ID, from: "bot", text: "", lang: "es" }]);
+  const [lang, setLangState] = useState<Lang>("es");
+  const [role, setRole] = useState<Role | null>(null);
   const [input, setInput] = useState("");
   const [sent, setSent] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -115,95 +168,96 @@ export default function Page() {
   const history = useRef<ApiMessage[]>([]);
   const sentRef = useRef(0);
   const busyRef = useRef(false);
-  const roleRef = useRef<Role | null>(null);
   const langRef = useRef<Lang>("es");
   const recRef = useRef<SpeechRec | null>(null);
   const submitRef = useRef<(raw: string) => void>(() => {});
 
   const atLimit = sent >= LIMIT;
 
+  const setLang = useCallback((l: Lang) => {
+    langRef.current = l;
+    setLangState(l);
+  }, []);
+
   /* ---------- envío y respuesta en streaming ---------- */
-  const submit = useCallback(async (raw: string) => {
-    const text = (raw || "").trim().slice(0, MAXLEN);
-    if (!text || busyRef.current || sentRef.current >= LIMIT) return;
+  const submit = useCallback(
+    async (raw: string) => {
+      const text = (raw || "").trim().slice(0, MAXLEN);
+      if (!text || busyRef.current || sentRef.current >= LIMIT) return;
 
-    const userLang = detectLang(text, langRef.current);
-    langRef.current = userLang;
-    const role = detectRole(text);
-    if (role) roleRef.current = role;
+      const userLang = detectLang(text, langRef.current);
+      setLang(userLang);
+      const newRole = detectRole(text);
+      if (newRole) setRole(newRole);
+      const card = detectCard(text);
 
-    const botId = nextId.current + 1;
-    const userItem: Item = { id: nextId.current, from: "user", text, lang: userLang };
-    nextId.current += 2;
+      const botId = nextId.current + 1;
+      const userItem: Item = { id: nextId.current, from: "user", text, lang: userLang };
+      nextId.current += 2;
 
-    busyRef.current = true;
-    sentRef.current += 1;
-    setBusy(true);
-    setSent(sentRef.current);
-    setInput("");
-    setChips([]);
-    setItems((prev) => [...prev, userItem, { id: botId, from: "bot", text: "", lang: userLang, pending: true }]);
+      busyRef.current = true;
+      sentRef.current += 1;
+      setBusy(true);
+      setSent(sentRef.current);
+      setInput("");
+      setItems((prev) => [...prev, userItem, { id: botId, from: "bot", text: "", lang: userLang, pending: true }]);
 
-    const setBot = (patch: Partial<Item>) =>
-      setItems((prev) => prev.map((it) => (it.id === botId ? { ...it, ...patch } : it)));
+      const setBot = (patch: Partial<Item>) =>
+        setItems((prev) => prev.map((it) => (it.id === botId ? { ...it, ...patch } : it)));
 
-    const messages: ApiMessage[] = [...history.current, { role: "user", content: text }];
-    let full = "";
-    let failure: "error" | "limit" | null = null;
+      const messages: ApiMessage[] = [...history.current, { role: "user", content: text }];
+      let full = "";
+      let failure: "error" | "limit" | null = null;
 
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
-      });
-      if (res.status === 429) failure = "limit";
-      else if (!res.ok || !res.body) failure = "error";
-      else {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          full += decoder.decode(value, { stream: true });
-          setBot({ text: full, pending: false });
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages }),
+        });
+        if (res.status === 429) failure = "limit";
+        else if (!res.ok || !res.body) failure = "error";
+        else {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            full += decoder.decode(value, { stream: true });
+            setBot({ text: full, pending: false });
+          }
+          full = (full + decoder.decode()).trim();
+          if (!full) failure = "error";
         }
-        full = (full + decoder.decode()).trim();
+      } catch {
+        // Si el stream se corta a la mitad, se conserva lo que ya llegó.
+        full = full.trim();
         if (!full) failure = "error";
       }
-    } catch {
-      // Si el stream se corta a la mitad, se conserva lo que ya llegó.
-      full = full.trim();
-      if (!full) failure = "error";
-    }
 
-    if (failure) {
-      setBot({ text: TEXT[failure][userLang], lang: userLang, pending: false });
-      if (failure === "limit") {
-        sentRef.current = LIMIT;
-        setSent(LIMIT);
-      } else {
-        // Un fallo no gasta un mensaje de la sesión.
-        sentRef.current -= 1;
+      if (failure) {
+        setBot({ text: TEXT[failure][userLang], lang: userLang, pending: false });
+        if (failure === "limit") {
+          sentRef.current = LIMIT;
+        } else {
+          sentRef.current -= 1; // un fallo no gasta un mensaje de la sesión
+        }
         setSent(sentRef.current);
-        setChips(roleRef.current ? NEXT_CHIPS[userLang][roleRef.current] : ROLE_CHIPS[userLang]);
-      }
-    } else {
-      const answerLang = detectLang(full, userLang);
-      langRef.current = answerLang;
-      history.current = [...messages, { role: "assistant", content: full }];
-      setBot({ text: full, lang: answerLang, pending: false });
-
-      if (sentRef.current >= LIMIT) {
-        setItems((prev) => [...prev, { id: nextId.current++, from: "bot", text: TEXT.limit[answerLang], lang: answerLang }]);
       } else {
-        setChips(roleRef.current ? NEXT_CHIPS[answerLang][roleRef.current] : ROLE_CHIPS[answerLang]);
+        const answerLang = detectLang(full, userLang);
+        setLang(answerLang);
+        history.current = [...messages, { role: "assistant", content: full }];
+        setBot({ text: full, lang: answerLang, pending: false, card });
+        if (sentRef.current >= LIMIT) {
+          setItems((prev) => [...prev, { id: nextId.current++, from: "bot", text: TEXT.limit[answerLang], lang: answerLang }]);
+        }
       }
-    }
 
-    busyRef.current = false;
-    setBusy(false);
-  }, []);
+      busyRef.current = false;
+      setBusy(false);
+    },
+    [setLang],
+  );
 
   useEffect(() => {
     submitRef.current = submit;
@@ -211,9 +265,7 @@ export default function Page() {
 
   /* ---------- capacidades del navegador ---------- */
   useEffect(() => {
-    const browserLang: Lang = navigator.language?.toLowerCase().startsWith("en") ? "en" : "es";
-    langRef.current = browserLang;
-    setChips((c) => (c === ROLE_CHIPS.es ? ROLE_CHIPS[browserLang] : c));
+    if (navigator.language?.toLowerCase().startsWith("en")) setLang("en");
 
     if ("speechSynthesis" in window) {
       setCanSpeak(true);
@@ -260,7 +312,7 @@ export default function Page() {
       } catch {}
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
-  }, []);
+  }, [setLang]);
 
   const toggleMic = () => {
     const rec = recRef.current;
@@ -281,24 +333,24 @@ export default function Page() {
   };
 
   /* ---------- texto a voz ---------- */
-  const speak = (item: Item) => {
+  const speak = (id: number, text: string, l: Lang) => {
     try {
       const synth = window.speechSynthesis;
-      if (speakingId === item.id) {
+      if (speakingId === id) {
         synth.cancel();
         setSpeakingId(null);
         return;
       }
       synth.cancel();
-      const u = new SpeechSynthesisUtterance(item.text.replace(/[•*#_]/g, ""));
-      u.lang = item.lang === "en" ? "en-US" : "es-US";
+      const u = new SpeechSynthesisUtterance(text.replace(/[•*#_]/g, ""));
+      u.lang = l === "en" ? "en-US" : "es-US";
       const voices = synth.getVoices();
       const voice =
         voices.find((v) => v.lang?.replace("_", "-").toLowerCase() === u.lang.toLowerCase()) ||
-        voices.find((v) => v.lang?.toLowerCase().startsWith(item.lang));
+        voices.find((v) => v.lang?.toLowerCase().startsWith(l));
       if (voice) u.voice = voice;
-      u.onend = u.onerror = () => setSpeakingId((id) => (id === item.id ? null : id));
-      setSpeakingId(item.id);
+      u.onend = u.onerror = () => setSpeakingId((cur) => (cur === id ? null : cur));
+      setSpeakingId(id);
       synth.speak(u);
     } catch {
       setCanSpeak(false);
@@ -309,154 +361,141 @@ export default function Page() {
   useEffect(() => {
     const el = chatRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [items, chips]);
+  }, [items, busy, role, lang]);
 
   const placeholder = atLimit
-    ? "Límite alcanzado · Limit reached"
+    ? TEXT.limitReached[lang]
     : listening
-      ? "Te escucho… / Listening…"
-      : "Escribe o habla · Type or talk";
+      ? TEXT.listening[lang]
+      : micVisible
+        ? TEXT.placeholder[lang]
+        : TEXT.placeholderNoMic[lang];
+
+  const showQuick = !busy && !atLimit;
 
   return (
-    <div className="app">
-      <header>
-        <div className="logos">
-          <div className="logo" title="Reemplazar por el logo oficial">
-            <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-              <circle cx="13" cy="13" r="12" fill="#fff" />
-              <path d="M5 14c3-2 5 2 8 0s5-2 8 0" stroke="#5cc8a8" strokeWidth="2.4" fill="none" strokeLinecap="round" />
-              <path d="M13 5c-3 2-3 6 0 8 3-2 3-6 0-8z" fill="#5cc8a8" />
+    <div className="app" lang={lang}>
+      <div className="top">
+        <div className="brand">
+          <span className="mark" title="A Cleaner Planet">
+            <svg width="22" height="22" viewBox="0 0 26 26" aria-hidden="true">
+              <path d="M5 15c3-2 5 2 8 0s5-2 8 0" stroke="#0e4f66" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+              <path d="M13 4c-3 2-3 6 0 8 3-2 3-6 0-8z" fill="#3f9b2f" />
             </svg>
-            <span>
-              A Cleaner Planet<small>logo aquí</small>
-            </span>
-          </div>
-          <span className="plus">+</span>
-          <div className="logo" title="Reemplazar por el logo oficial">
-            <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-              <circle cx="13" cy="13" r="12" fill="#fff" />
-              <path d="M6 13c3-4 9-4 12 0-3 4-9 4-12 0z" fill="#3fa9dc" />
-              <path d="M18 13l3-3v6z" fill="#3fa9dc" />
-              <circle cx="9.5" cy="12.3" r="1" fill="#fff" />
+          </span>
+          <span className="mark" title="Plastic Fisherman">
+            <svg width="22" height="22" viewBox="0 0 26 26" aria-hidden="true">
+              <path d="M5 13c3-4 9-4 12 0-3 4-9 4-12 0z" fill="#0b8fc9" />
+              <path d="M17 13l4-3v6z" fill="#0b8fc9" />
+              <circle cx="8.6" cy="12.3" r="1" fill="#fff" />
             </svg>
-            <span>
-              Plastic Fisherman<small>logo aquí</small>
-            </span>
-          </div>
+          </span>
+          <span className="brand-name">
+            <span>A Cleaner Planet</span>
+            <span>Plastic Fisherman</span>
+          </span>
         </div>
-        <div className="hero">
-          <div className="avatar" aria-hidden="true">
-            <svg width="40" height="40" viewBox="0 0 40 40">
-              <rect x="4" y="10" width="32" height="10" rx="2" fill="#0b2a3c" />
-              <g>
-                <circle cx="8" cy="13" r="1.6" fill="#f2c230" />
-                <circle cx="12" cy="13" r="1.6" fill="#e0457b" />
-                <circle cx="16" cy="13" r="1.6" fill="#5cc8a8" />
-                <circle cx="20" cy="13" r="1.6" fill="#149ac9" />
-                <circle cx="24" cy="13" r="1.6" fill="#f2c230" />
-                <circle cx="28" cy="13" r="1.6" fill="#e0457b" />
-                <circle cx="32" cy="13" r="1.6" fill="#5cc8a8" />
-                <circle cx="10" cy="17" r="1.6" fill="#149ac9" />
-                <circle cx="14" cy="17" r="1.6" fill="#f2c230" />
-                <circle cx="18" cy="17" r="1.6" fill="#e0457b" />
-                <circle cx="22" cy="17" r="1.6" fill="#5cc8a8" />
-                <circle cx="26" cy="17" r="1.6" fill="#149ac9" />
-                <circle cx="30" cy="17" r="1.6" fill="#f2c230" />
-              </g>
-              <rect x="7" y="20" width="5" height="12" rx="1" fill="#0b2a3c" />
-              <rect x="28" y="20" width="5" height="12" rx="1" fill="#0b2a3c" />
-              <circle cx="9.5" cy="24" r="1.4" fill="#e0457b" />
-              <circle cx="9.5" cy="28" r="1.4" fill="#5cc8a8" />
-              <circle cx="30.5" cy="24" r="1.4" fill="#f2c230" />
-              <circle cx="30.5" cy="28" r="1.4" fill="#149ac9" />
-            </svg>
-          </div>
-          <div>
-            <p className="kicker">Pregúntale · Ask</p>
-            <h1>Cap Coach</h1>
-            <p className="tag">
-              <b>Save your cap a seat</b> · Guárdale un puesto a tu tapa
-            </p>
-          </div>
-        </div>
-        <svg className="waves" viewBox="0 0 760 30" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M0 14 Q 47.5 0 95 14 T 190 14 T 285 14 T 380 14 T 475 14 T 570 14 T 665 14 T 760 14 V30 H0z" fill="#cdeaf8" />
-          <path d="M0 20 Q 47.5 8 95 20 T 190 20 T 285 20 T 380 20 T 475 20 T 570 20 T 665 20 T 760 20 V30 H0z" fill="#e6f5fc" />
-        </svg>
-      </header>
-
-      <div className="strip" aria-label="Meta de la campaña">
-        <div className="step">
-          <i style={{ background: "#e6f5fc" }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="2" y="5" width="12" height="7" rx="2" fill="#3fa9dc" />
-              <rect x="2" y="3.5" width="12" height="3" rx="1.5" fill="#7cc8ec" />
-            </svg>
-          </i>
-          19,000 tapas
-        </div>
-        <span className="arrow">→</span>
-        <div className="step">
-          <i style={{ background: "#fff6e3" }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 12h10l-1.5-6h-7z" fill="#ff8a65" />
-              <rect x="5" y="3" width="6" height="3" rx="1" fill="#ffb59c" />
-            </svg>
-          </i>
-          84 lb
-        </div>
-        <span className="arrow">→</span>
-        <div className="step">
-          <i style={{ background: "#e3f7f0" }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="1.5" y="6" width="13" height="3" rx="1" fill="#5cc8a8" />
-              <rect x="3" y="9" width="2" height="4" fill="#3ea688" />
-              <rect x="11" y="9" width="2" height="4" fill="#3ea688" />
-            </svg>
-          </i>
-          1 Bay Bench
+        <div className="langs" role="group" aria-label="Idioma · Language">
+          <button type="button" aria-pressed={lang === "en"} onClick={() => setLang("en")}>
+            EN
+          </button>
+          <button type="button" aria-pressed={lang === "es"} onClick={() => setLang("es")}>
+            ES
+          </button>
         </div>
       </div>
 
+      <header className={"hero" + (items.length > 1 ? " compact" : "")}>
+        <div className="hero-text">
+          <p className="kicker">{TEXT.kicker[lang]}</p>
+          <h1>{TEXT.title[lang]}</h1>
+          <p className="hero-sub">{TEXT.sub[lang]}</p>
+        </div>
+        <div className="hero-art">
+          <Bench />
+          <div className="hero-stats">
+            <span>
+              <b>19,000</b>
+              {TEXT.stats[lang][0]}
+            </span>
+            <span>
+              <b>84</b>
+              {TEXT.stats[lang][1]}
+            </span>
+            <span>
+              <b>1</b>
+              {TEXT.stats[lang][2]}
+            </span>
+          </div>
+        </div>
+      </header>
+
       <main className="chat" ref={chatRef} aria-live="polite">
-        {items.map((it) =>
-          it.from === "user" ? (
-            <div className="row user" key={it.id}>
-              <div className="bubble">{it.text}</div>
-            </div>
-          ) : (
+        {items.map((it) => {
+          if (it.from === "user") {
+            return (
+              <div className="row user" key={it.id}>
+                <div className="bubble">{it.text}</div>
+              </div>
+            );
+          }
+          const isWelcome = it.id === WELCOME_ID;
+          const text = isWelcome ? TEXT.welcome[lang] : it.text;
+          const itemLang = isWelcome ? lang : it.lang;
+          return (
             <div className="row bot" key={it.id}>
               <div className="mini">
-                <BotIcon />
+                <Bench />
               </div>
               {it.pending ? (
-                <div className="bubble typing" aria-label="Escribiendo…">
+                <div className="bubble typing" aria-label={TEXT.typing[lang]}>
                   <span></span>
                   <span></span>
                   <span></span>
                 </div>
               ) : (
-                <div>
-                  <div className="bubble">{it.text}</div>
+                <div className="col">
+                  <div className="bubble">{text}</div>
+                  {it.card && <VisualCard kind={it.card} lang={itemLang} />}
                   {canSpeak && (
-                    <div className="meta">
-                      <button
-                        type="button"
-                        className={"speak" + (speakingId === it.id ? " on" : "")}
-                        onClick={() => speak(it)}
-                      >
-                        <SpeakerIcon /> {it.lang === "en" ? "Listen" : "Escuchar"}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className={"speak" + (speakingId === it.id ? " on" : "")}
+                      onClick={() => speak(it.id, text, itemLang)}
+                      aria-pressed={speakingId === it.id}
+                    >
+                      <SpeakerIcon /> {speakingId === it.id ? TEXT.stop[lang] : TEXT.listen[lang]}
+                    </button>
                   )}
                 </div>
               )}
             </div>
-          ),
+          );
+        })}
+
+        {showQuick && !role && (
+          <div className="roles">
+            {ROLES.map((r) => (
+              <button
+                type="button"
+                className="role"
+                key={r.role}
+                style={{ "--c": r.color } as React.CSSProperties}
+                onClick={() => submit(r.send[lang])}
+              >
+                <i>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    {r.icon}
+                  </svg>
+                </i>
+                {r.label[lang]}
+              </button>
+            ))}
+          </div>
         )}
-        {chips.length > 0 && !busy && !atLimit && (
+        {showQuick && role && (
           <div className="chips">
-            {chips.map((label) => (
+            {NEXT_CHIPS[lang][role].map((label) => (
               <button type="button" className="chip" key={label} onClick={() => submit(label)}>
                 {label}
               </button>
@@ -479,7 +518,7 @@ export default function Page() {
               onChange={(e) => setInput(e.target.value)}
               maxLength={MAXLEN}
               placeholder={placeholder}
-              aria-label="Mensaje"
+              aria-label={TEXT.placeholderNoMic[lang]}
               disabled={atLimit}
             />
             {micVisible && !atLimit && (
@@ -487,7 +526,7 @@ export default function Page() {
                 type="button"
                 className={"round mic" + (listening ? " rec" : "")}
                 onClick={toggleMic}
-                aria-label={listening ? "Detener" : "Hablar"}
+                aria-label={listening ? TEXT.stop[lang] : TEXT.talk[lang]}
                 aria-pressed={listening}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -498,7 +537,7 @@ export default function Page() {
               </button>
             )}
           </div>
-          <button className="round send" aria-label="Enviar" disabled={!input.trim() || busy || atLimit}>
+          <button className="round send" aria-label={TEXT.send[lang]} disabled={!input.trim() || busy || atLimit}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M3 11.5 20 4l-7.5 17-2-7.5z" />
             </svg>
@@ -506,10 +545,15 @@ export default function Page() {
         </form>
         <div className="sub">
           <span className="count">
-            Mensajes: <b>{sent}</b> / {LIMIT}
+            <span className="meter" aria-hidden="true">
+              <span style={{ width: `${100 - (sent / LIMIT) * 100}%` }} />
+            </span>
+            <span>
+              {TEXT.messages[lang]}: <b>{sent}</b> / {LIMIT}
+            </span>
           </span>
           <span>
-            ¿Dudas? <a href={`mailto:${EMAIL}`}>{EMAIL}</a>
+            {TEXT.questions[lang]} <a href={`mailto:${EMAIL}`}>{EMAIL}</a>
             <span className="tagx"> · #plasticfishing</span>
           </span>
         </div>
